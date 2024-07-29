@@ -30,19 +30,19 @@ public class Bitboard {
         whiteBoards[1] = 0x0042; // White Knights
         whiteBoards[2] = 0x0024; // White Bishops
         whiteBoards[3] = 0x0081; // White Rooks
-        whiteBoards[4] = 0x0010; // White Queen
-        whiteBoards[5] = 0x0080; // White King
+        whiteBoards[4] = 0x0008; // White Queen
+        whiteBoards[5] = 0x0010; // White King
 
         // Black pieces corresponding to long bitboards
         blackBoards[0] = 0x00FF000000000000L; // Black Pawns
         blackBoards[1] = 0x4200000000000000L; // Black Knights
         blackBoards[2] = 0x2400000000000000L; // Black Bishops
         blackBoards[3] = 0x8100000000000000L; // Black Rooks
-        blackBoards[4] = 0x1000000000000000L; // Black Queen
-        blackBoards[5] = 0x0800000000000000L; // Black King
+        blackBoards[4] = 0x0800000000000000L; // Black Queen
+        blackBoards[5] = 0x1000000000000000L; // Black King
 
         for (int i = 0; i < 6; i++) {
-            gameBoard = whiteBoards[i] | blackBoards[i];
+            gameBoard |= whiteBoards[i] | blackBoards[i];
         }
 
         pieceTypeArr = GamePiece.PieceType.values();
@@ -75,7 +75,7 @@ public class Bitboard {
         long toMask = posToMask(to);
 
         board[boardIndex] ^= fromMask | toMask;
-        gameBoard ^= boardIndex;
+        gameBoard ^= fromMask | toMask;
     }
 
     /**

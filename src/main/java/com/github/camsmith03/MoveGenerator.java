@@ -56,20 +56,26 @@ public class MoveGenerator {
 
         // Move up 1
         long pawnMoves1 = (pawns << 8)  & ~gameBoard;
-        for (long pawn = pawnMoves1 & -pawnMoves1; pawnMoves1 != 0; pawnMoves1 ^= pawn) {
-            pieceAppend(pawn, pawn << 8, GamePiece.PieceColor.WHITE);
+        while (pawnMoves1 != 0) {
+            long pawn = pawnMoves1 & -pawnMoves1;
+            pieceAppend(pawn >>> 8, pawn, GamePiece.PieceColor.WHITE);
+            pawnMoves1 ^= pawn;
         }
 
         // Move up 2 (only from starting square)
         long pawnMoves2 = ((pawns & 0xFF00L) << 16) & ~gameBoard;
-        for (long pawn = pawnMoves2 & -pawnMoves2; pawnMoves2 != 0; pawnMoves2 ^= pawn) {
-            pieceAppend(pawn, pawn << 16, GamePiece.PieceColor.WHITE);
+
+        while (pawnMoves2 != 0) {
+            long pawn = pawnMoves2 & -pawnMoves2;
+            pieceAppend(pawn >>> 16, pawn, GamePiece.PieceColor.WHITE);
+            pawnMoves2 ^= pawn;
         }
 
         // Capture (not en passant)
-        long pawnCapture = pawns;
+        long pawnCaptured = pawns;
         long pMask;
-        for(long pawn = pawnCapture & -pawnCapture; pawnCapture != 0; pawnCapture ^= pawn) {
+        while (pawnCaptured != 0) {
+            long pawn = pawnCaptured & -pawnCaptured;
             long pShift = (pawn << 8);
             if ( (pShift & alternatingByteMask) != 0) {
                 pMask = alternatingByteMask;
@@ -80,13 +86,14 @@ public class MoveGenerator {
 
             if (((pShift << 1) & pMask) != 0) {
                 // If pawn is not on right edge of the board
-                pieceAppend(pawn, pShift << 1, GamePiece.PieceColor.WHITE);
+                pawnCapture(pawn, pShift << 1, GamePiece.PieceColor.WHITE);
             }
 
             if (((pShift >>> 1) & pMask) != 0) {
                 // If pawn is not on left edge of the board
-                pieceAppend(pawn, pShift >>> 1, GamePiece.PieceColor.WHITE);
+                pawnCapture(pawn, pShift >>> 1, GamePiece.PieceColor.WHITE);
             }
+            pawnCaptured ^= pawn;
         }
         /*
         We can apply check for illegal pawn moves by using two alternating byte masks.
@@ -107,20 +114,26 @@ public class MoveGenerator {
 
         // Move down 1
         long pawnMoves1 = (pawns >>> 8)  & ~gameBoard;
-        for (long pawn = pawnMoves1 & -pawnMoves1; pawnMoves1 != 0; pawnMoves1 ^= pawn) {
-            pieceAppend(pawn, pawn >>> 8, GamePiece.PieceColor.BLACK);
+        while (pawnMoves1 != 0) {
+            long pawn = pawnMoves1 & -pawnMoves1;
+            pieceAppend(pawn << 8, pawn, GamePiece.PieceColor.BLACK);
+            pawnMoves1 ^= pawn;
         }
 
         // Move down 2 (only from starting square)
         long pawnMoves2 = ((pawns & 0x00FF000000000000L) >>> 16) & ~gameBoard;
-        for (long pawn = pawnMoves2 & -pawnMoves2; pawnMoves2 != 0; pawnMoves2 ^= pawn) {
-            pieceAppend(pawn, pawn >>> 16, GamePiece.PieceColor.BLACK);
+        while (pawnMoves2 != 0) {
+            long pawn = pawnMoves2 & -pawnMoves2;
+            pieceAppend(pawn << 16, pawn, GamePiece.PieceColor.BLACK);
+            pawnMoves2 ^= pawn;
         }
 
         // Capture (not en passant)
-        long pawnCapture = pawns;
+        long pawnCaptured = pawns;
         long pMask;
-        for(long pawn = pawnCapture & -pawnCapture; pawnCapture != 0; pawnCapture ^= pawn) {
+
+        while (pawnCaptured != 0) {
+            long pawn = pawnCaptured & -pawnCaptured;
             long pShift = (pawn >>> 8);
             if ( (pShift & alternatingByteMask) != 0) {
                 pMask = alternatingByteMask;
@@ -131,13 +144,14 @@ public class MoveGenerator {
 
             if (((pShift << 1) & pMask) != 0) {
                 // If pawn is not on right edge of the board
-                pieceAppend(pawn, pShift << 1, GamePiece.PieceColor.BLACK);
+                pawnCapture(pawn, pShift << 1, GamePiece.PieceColor.BLACK);
             }
 
             if (((pShift >>> 1) & pMask) != 0) {
                 // If pawn is not on left edge of the board
-                pieceAppend(pawn, pShift >>> 1, GamePiece.PieceColor.BLACK);
+                pawnCapture(pawn, pShift >>> 1, GamePiece.PieceColor.BLACK);
             }
+            pawnCaptured ^= pawn;
         }
     }
 
@@ -156,7 +170,8 @@ public class MoveGenerator {
             pieceAppend(king, (king << 1) << 8, color);
             pieceAppend(king, (king << 1) >>> 8, color);
         }
-        else if (((king >>> 1) & kingMask) != 0) {
+
+        if (((king >>> 1) & kingMask) != 0) {
             pieceAppend(king, king >>> 1, color);
             pieceAppend(king, (king >>> 1) << 8, color);
             pieceAppend(king, (king >>> 1) >>> 8, color);
@@ -168,7 +183,9 @@ public class MoveGenerator {
     private void rookAppend(long rooks, GamePiece.PieceColor color) {
         long rookMask;
         long rookLeft, rookRight, rookUp, rookDown;
-        for (long rook = rooks & -rooks; rooks != 0; rooks ^= rook) {
+        while (rooks != 0) {
+            long rook = rooks & -rooks;
+
             if ((rook & alternatingByteMask) != 0) {
                 rookMask = alternatingByteMask;
             }
@@ -215,23 +232,29 @@ public class MoveGenerator {
                     rookDown = 0;
                 }
             }
+            rooks ^= rook;
         }
-
     }
 
     private void bishopAppend(long bishops, GamePiece.PieceColor color) {
         long bishopMask;
         long upperdiag;
         long lowerdiag;
-        for (long bishop = bishops & -bishops; bishops != 0; bishops ^= bishop) {
-            bishopMask = alternatingByteMask;
-            if ((bishop & bishopMask) == 0) {
+
+        while (bishops != 0) {
+            long bishop = bishops & -bishops;
+
+            if ((bishop & alternatingByteMask) != 0) {
+                bishopMask = alternatingByteMask;
+            }
+            else {
                 bishopMask = ~alternatingByteMask;
             }
 
             upperdiag = bishop << 7;
             lowerdiag = bishop >>> 9;
-            for (long leftSide = bishop >>> 1; (leftSide & bishopMask) != 0; leftSide = leftSide >>> 1) {
+            long leftSide = bishop >>> 1;
+            while ((leftSide & bishopMask) != 0 && (upperdiag != 0 || lowerdiag != 0)) {
                 if (upperdiag != 0) {
                     if (pieceAppend(bishop, upperdiag, color) == 0) {
                         upperdiag = upperdiag << 7;
@@ -248,11 +271,13 @@ public class MoveGenerator {
                         lowerdiag = 0;
                     }
                 }
+                leftSide = leftSide >>> 1;
             }
 
             upperdiag = bishop << 9;
             lowerdiag = bishop >>> 7;
-            for (long rightSide = bishop >>> 1; (rightSide & bishopMask) != 0; rightSide = rightSide >>> 1) {
+            long rightSide = bishop << 1;
+            while ((rightSide & bishopMask) != 0 && (upperdiag != 0 || lowerdiag != 0)) {
                 if (upperdiag != 0) {
                     if (pieceAppend(bishop, upperdiag, color) == 0) {
                         upperdiag = upperdiag << 9; // Bishop hit an empty square, can continue on the diagonal.
@@ -269,13 +294,17 @@ public class MoveGenerator {
                         lowerdiag = 0; // Bishop hit nonempty square, can no longer continue on the diagonal.
                     }
                 }
+                rightSide = rightSide << 1;
             }
+
+            bishops ^= bishop;
         }
     }
 
     private void knightAppend(long knights, GamePiece.PieceColor color) {
         long knightMask;
-        for (long knight = knights & -knights; knights != 0; knights ^= knight) {
+        while (knights != 0) {
+            long knight = knights & -knights;
             if ((knight & alternatingByteMask) != 0) {
                 knightMask = alternatingByteMask;
             }
@@ -296,11 +325,27 @@ public class MoveGenerator {
                     pieceAppend(knight, (knight << 8) << 2, color);
                     pieceAppend(knight, (knight >>> 8) << 2, color);
                 }
-                pieceAppend(knight, (knight << 16) >>> 1, color);
-                pieceAppend(knight, (knight >>> 16) >>> 1, color);
+                pieceAppend(knight, (knight << 16) << 1, color);
+                pieceAppend(knight, (knight >>> 16) << 1, color);
+            }
+            knights ^= knight;
+        }
+    }
+
+    private void pawnCapture(long oldLoc, long newLoc, GamePiece.PieceColor pieceColor) {
+        Square newSquare = bitToPos(newLoc);
+        Square oldSquare = bitToPos(oldLoc);
+        if (newLoc != 0) {
+            // avoid the method call if the newLoc extends below or above the board.
+            GamePiece captured = bitboard.getPiece(newSquare);
+            if (captured != null) {
+                if (pieceColor != captured.getColor()) {
+                    possibleMoves.add(new Move(oldSquare, newSquare, captured.getType())); // opponent piece captured
+                }
             }
         }
     }
+
 
     /**
      *
