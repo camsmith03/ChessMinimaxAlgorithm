@@ -24,4 +24,10 @@ public class Square {
     public int getY() {
         return y;
     }
+
+    @Override
+    public String toString() {
+        return "(" + x + ", " + y + ")";
+    }
+
 }

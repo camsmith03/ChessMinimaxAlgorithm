@@ -1,51 +1,52 @@
 package com.github.camsmith03;
-import java.lang.reflect.Array;
 import java.util.ArrayList;
 
 public class MoveGenerator {
     private final long alternatingByteMask = 0xFF00FF00FF00FF00L;
-    private ArrayList<Move> possibleMoves;
+    private MoveList possibleMoves;
     private Bitboard bitboard;
+    private final long[] queenSideCastleCheck = new long[]{0x0E, 0xE000000000000000L};
+    private final long[] kingSideCastleCheck = new long[]{0x60, 0x06000000000000L};
 
     /**
      * Generates all moves, even those that may be illegal (putting king in check, etc.)
      *
      */
-    public ArrayList<Move> generateMoves(Board board) {
-        possibleMoves = new ArrayList<>();
-        bitboard = board.getBitboard();
+    public MoveList generateMoves(Bitboard board, Piece.Color turnToMove) {
+        possibleMoves = new MoveList();
+        bitboard = board;
 
-        if (board.getTurn() == GamePiece.PieceColor.WHITE) {
+        if (turnToMove == Piece.Color.WHITE) {
             long[] white = bitboard.getWhitePieceBitboards();
             // ==============  Pawns  ==============
             whitePawnAppend(white[0]);
             // ============== Knights ==============
-            knightAppend(white[1], GamePiece.PieceColor.WHITE);
+            knightAppend(white[1], Piece.Color.WHITE);
             // ============== Bishops ==============
-            bishopAppend(white[2], GamePiece.PieceColor.WHITE);
+            bishopAppend(white[2], Piece.Type.BISHOP, Piece.Color.WHITE);
             // ==============  Rooks  ==============
-            rookAppend(white[3], GamePiece.PieceColor.WHITE);
+            rookAppend(white[3], Piece.Type.ROOK, Piece.Color.WHITE);
             // ==============  Queen  ==============
-            bishopAppend(white[4], GamePiece.PieceColor.WHITE);
-            rookAppend(white[4], GamePiece.PieceColor.WHITE);
+            bishopAppend(white[4], Piece.Type.QUEEN, Piece.Color.WHITE);
+            rookAppend(white[4], Piece.Type.QUEEN, Piece.Color.WHITE);
             // ==============   King  ==============
-            kingAppend(white[5], GamePiece.PieceColor.WHITE);
+            kingAppend(white[5], Piece.Color.WHITE);
         }
         else {
             long[] black = bitboard.getBlackPieceBitboards();
             // ==============  Pawns  ==============
             blackPawnAppend(black[0]);
             // ============== Knights ==============
-            knightAppend(black[1], GamePiece.PieceColor.BLACK);
+            knightAppend(black[1], Piece.Color.BLACK);
             // ============== Bishops ==============
-            bishopAppend(black[2], GamePiece.PieceColor.BLACK);
+            bishopAppend(black[2], Piece.Type.BISHOP, Piece.Color.BLACK);
             // ==============  Rooks  ==============
-            rookAppend(black[3], GamePiece.PieceColor.BLACK);
+            rookAppend(black[3], Piece.Type.ROOK, Piece.Color.BLACK);
             // ==============  Queen  ==============
-            bishopAppend(black[4], GamePiece.PieceColor.BLACK);
-            rookAppend(black[4], GamePiece.PieceColor.BLACK);
+            bishopAppend(black[4], Piece.Type.QUEEN, Piece.Color.BLACK);
+            rookAppend(black[4], Piece.Type.QUEEN, Piece.Color.BLACK);
             // ==============   King  ==============
-            kingAppend(black[5], GamePiece.PieceColor.BLACK);
+            kingAppend(black[5], Piece.Color.BLACK);
         }
 
         return possibleMoves;
@@ -58,7 +59,15 @@ public class MoveGenerator {
         long pawnMoves1 = (pawns << 8)  & ~gameBoard;
         while (pawnMoves1 != 0) {
             long pawn = pawnMoves1 & -pawnMoves1;
-            pieceAppend(pawn >>> 8, pawn, GamePiece.PieceColor.WHITE);
+            if ((pawn & 0xFF00000000000000L) != 0) {
+                // Pawn promoted
+                possibleMoves.addMove(new Move(pawn >>> 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.NONE, Piece.Type.KNIGHT));
+                possibleMoves.addMove(new Move(pawn >>> 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.NONE, Piece.Type.BISHOP));
+                possibleMoves.addMove(new Move(pawn >>> 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.NONE, Piece.Type.QUEEN));
+            }
+            else {
+                pieceAppend(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE);
+            }
             pawnMoves1 ^= pawn;
         }
 
@@ -67,7 +76,7 @@ public class MoveGenerator {
 
         while (pawnMoves2 != 0) {
             long pawn = pawnMoves2 & -pawnMoves2;
-            pieceAppend(pawn >>> 16, pawn, GamePiece.PieceColor.WHITE);
+            pieceAppend(pawn >>> 16, pawn, Piece.Type.PAWN, Piece.Color.WHITE);
             pawnMoves2 ^= pawn;
         }
 
@@ -86,14 +95,39 @@ public class MoveGenerator {
 
             if (((pShift << 1) & pMask) != 0) {
                 // If pawn is not on right edge of the board
-                pawnCapture(pawn, pShift << 1, GamePiece.PieceColor.WHITE);
+                pawnCapture(pawn, pShift << 1, Piece.Color.WHITE);
             }
 
             if (((pShift >>> 1) & pMask) != 0) {
                 // If pawn is not on left edge of the board
-                pawnCapture(pawn, pShift >>> 1, GamePiece.PieceColor.WHITE);
+                pawnCapture(pawn, pShift >>> 1, Piece.Color.WHITE);
             }
             pawnCaptured ^= pawn;
+        }
+
+        // Capture (en passant)
+        if (bitboard.enPassantBoard != 0) {
+            long whitePawns = pawns & bitboard.enPassantBoard;
+            long blackPawn = bitboard.enPassantBoard ^ whitePawns;
+            long whitePawn = whitePawns & -whitePawns;
+
+            Move enPassant = new Move(whitePawn, blackPawn << 8,
+                    new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.PAWN);
+
+            enPassant.setEnPassant(blackPawn);
+            possibleMoves.addMove(enPassant);
+
+
+            if (whitePawns != whitePawn) {
+                // Double en passant (two white pawns can perform the attack)
+                // Rare, but plausible, so condition is here to ensure correct moves generated
+                whitePawn ^= whitePawns;
+                enPassant = new Move(whitePawn, blackPawn << 8,
+                        new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.PAWN);
+
+                enPassant.setEnPassant(blackPawn);
+                possibleMoves.addMove(enPassant);
+            }
         }
         /*
         We can apply check for illegal pawn moves by using two alternating byte masks.
@@ -116,7 +150,16 @@ public class MoveGenerator {
         long pawnMoves1 = (pawns >>> 8)  & ~gameBoard;
         while (pawnMoves1 != 0) {
             long pawn = pawnMoves1 & -pawnMoves1;
-            pieceAppend(pawn << 8, pawn, GamePiece.PieceColor.BLACK);
+
+            if ((pawn & 0x00FF) != 0) {
+                // Promoted Pawns
+                possibleMoves.addMove(new Move(pawn << 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.NONE, Piece.Type.KNIGHT));
+                possibleMoves.addMove(new Move(pawn << 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.NONE, Piece.Type.BISHOP));
+                possibleMoves.addMove(new Move(pawn << 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.NONE, Piece.Type.QUEEN));
+            }
+            else {
+                pieceAppend(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK);
+            }
             pawnMoves1 ^= pawn;
         }
 
@@ -124,14 +167,13 @@ public class MoveGenerator {
         long pawnMoves2 = ((pawns & 0x00FF000000000000L) >>> 16) & ~gameBoard;
         while (pawnMoves2 != 0) {
             long pawn = pawnMoves2 & -pawnMoves2;
-            pieceAppend(pawn << 16, pawn, GamePiece.PieceColor.BLACK);
+            pieceAppend(pawn << 16, pawn, Piece.Type.PAWN, Piece.Color.BLACK);
             pawnMoves2 ^= pawn;
         }
 
         // Capture (not en passant)
         long pawnCaptured = pawns;
         long pMask;
-
         while (pawnCaptured != 0) {
             long pawn = pawnCaptured & -pawnCaptured;
             long pShift = (pawn >>> 8);
@@ -144,19 +186,44 @@ public class MoveGenerator {
 
             if (((pShift << 1) & pMask) != 0) {
                 // If pawn is not on right edge of the board
-                pawnCapture(pawn, pShift << 1, GamePiece.PieceColor.BLACK);
+                pawnCapture(pawn, pShift << 1, Piece.Color.BLACK);
             }
 
             if (((pShift >>> 1) & pMask) != 0) {
                 // If pawn is not on left edge of the board
-                pawnCapture(pawn, pShift >>> 1, GamePiece.PieceColor.BLACK);
+                pawnCapture(pawn, pShift >>> 1, Piece.Color.BLACK);
             }
             pawnCaptured ^= pawn;
+        }
+
+        // Capture (en passant)
+        if (bitboard.enPassantBoard != 0) {
+            long blackPawns = pawns & bitboard.enPassantBoard;
+            long whitePawn = bitboard.enPassantBoard ^ blackPawns;
+            long blackPawn = blackPawns & -blackPawns;
+
+            Move enPassant = new Move(blackPawn, whitePawn >>> 8,
+                    new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.PAWN);
+
+            enPassant.setEnPassant(whitePawn);
+            possibleMoves.addMove(enPassant);
+
+
+            if (blackPawns != blackPawn) {
+                // Double en passant (two black pawns can perform attack)
+                // Rare, but plausible, so condition is here to ensure correct moves generated
+                blackPawn ^= blackPawns;
+                enPassant = new Move(blackPawn, whitePawn >>> 8,
+                        new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.PAWN);
+
+                enPassant.setEnPassant(whitePawn);
+                possibleMoves.addMove(enPassant);
+            }
         }
     }
 
 
-    private void kingAppend(long king, GamePiece.PieceColor color) {
+    private void kingAppend(long king, Piece.Color color) {
         long kingMask;
         if ((king & alternatingByteMask) != 0) {
             kingMask = alternatingByteMask;
@@ -166,21 +233,40 @@ public class MoveGenerator {
         }
 
         if (((king << 1) & kingMask) != 0) {
-            pieceAppend(king, king << 1, color);
-            pieceAppend(king, (king << 1) << 8, color);
-            pieceAppend(king, (king << 1) >>> 8, color);
+            pieceAppend(king, king << 1, Piece.Type.KING, color);
+            pieceAppend(king, (king << 1) << 8, Piece.Type.KING, color);
+            pieceAppend(king, (king << 1) >>> 8, Piece.Type.KING, color);
         }
 
         if (((king >>> 1) & kingMask) != 0) {
-            pieceAppend(king, king >>> 1, color);
-            pieceAppend(king, (king >>> 1) << 8, color);
-            pieceAppend(king, (king >>> 1) >>> 8, color);
+            pieceAppend(king, king >>> 1, Piece.Type.KING, color);
+            pieceAppend(king, (king >>> 1) << 8, Piece.Type.KING, color);
+            pieceAppend(king, (king >>> 1) >>> 8, Piece.Type.KING, color);
         }
-        pieceAppend(king, king << 8, color);
-        pieceAppend(king, king >>> 8, color);
+        pieceAppend(king, king << 8, Piece.Type.KING, color);
+        pieceAppend(king, king >>> 8, Piece.Type.KING, color);
+
+        int colorIndex = color.ordinal();
+        if (bitboard.castleMasks[colorIndex] != 0) {
+            // Check Queen side castle
+            long boardColor = bitboard.getBoardColor(color);
+            if ((boardColor & queenSideCastleCheck[colorIndex]) == 0) {
+                Move queenSideCastle = new Move(0, 0, new Piece(Piece.Type.KING, color));
+                queenSideCastle.setCastledRook(bitboard.castleMasks[colorIndex] & 0x0100000000000001L);
+                possibleMoves.addMove(queenSideCastle);
+            }
+
+            // Check King side castle
+            if ((boardColor & kingSideCastleCheck[colorIndex]) == 0) {
+                Move kingSideCastle = new Move(0, 0, new Piece(Piece.Type.KING, color));
+                kingSideCastle.setCastledRook(bitboard.castleMasks[colorIndex] & 0x8000000000000080L);
+                possibleMoves.addMove(kingSideCastle);
+            }
+
+        }
     }
 
-    private void rookAppend(long rooks, GamePiece.PieceColor color) {
+    private void rookAppend(long rooks, Piece.Type type, Piece.Color color) {
         long rookMask;
         long rookLeft, rookRight, rookUp, rookDown;
         while (rooks != 0) {
@@ -195,7 +281,7 @@ public class MoveGenerator {
 
             rookLeft = rook >>> 1;
             while ((rookLeft & rookMask) != 0 && rookLeft != 0) {
-                if (pieceAppend(rook, rookLeft, color) == 0) {
+                if (pieceAppend(rook, rookLeft, type, color) == 0) {
                     rookLeft = rookLeft >>> 1;
                 }
                 else {
@@ -205,7 +291,7 @@ public class MoveGenerator {
 
             rookRight = rook << 1;
             while ((rookRight & rookMask) != 0 && rookRight != 0) {
-                if (pieceAppend(rook, rookRight, color) == 0) {
+                if (pieceAppend(rook, rookRight, type, color) == 0) {
                     rookRight = rookRight << 1;
                 }
                 else {
@@ -215,7 +301,7 @@ public class MoveGenerator {
 
             rookUp = rook << 8;
             while (rookUp != 0) {
-                if (pieceAppend(rook, rookUp, color) == 0) {
+                if (pieceAppend(rook, rookUp, type, color) == 0) {
                     rookUp = rookUp << 8;
                 }
                 else {
@@ -225,7 +311,7 @@ public class MoveGenerator {
 
             rookDown = rook >>> 8;
             while (rookDown != 0) {
-                if (pieceAppend(rook, rookDown, color) == 0) {
+                if (pieceAppend(rook, rookDown, type, color) == 0) {
                     rookDown = rookDown << 8;
                 }
                 else {
@@ -236,7 +322,7 @@ public class MoveGenerator {
         }
     }
 
-    private void bishopAppend(long bishops, GamePiece.PieceColor color) {
+    private void bishopAppend(long bishops, Piece.Type type, Piece.Color color) {
         long bishopMask;
         long upperdiag;
         long lowerdiag;
@@ -256,7 +342,7 @@ public class MoveGenerator {
             long leftSide = bishop >>> 1;
             while ((leftSide & bishopMask) != 0 && (upperdiag != 0 || lowerdiag != 0)) {
                 if (upperdiag != 0) {
-                    if (pieceAppend(bishop, upperdiag, color) == 0) {
+                    if (pieceAppend(bishop, upperdiag, type, color) == 0) {
                         upperdiag = upperdiag << 7;
                     }
                     else {
@@ -264,7 +350,7 @@ public class MoveGenerator {
                     }
                 }
                 if (lowerdiag != 0) {
-                    if (pieceAppend(bishop, lowerdiag, color) == 0) {
+                    if (pieceAppend(bishop, lowerdiag, type, color) == 0) {
                         lowerdiag = lowerdiag >>> 9;
                     }
                     else {
@@ -279,7 +365,7 @@ public class MoveGenerator {
             long rightSide = bishop << 1;
             while ((rightSide & bishopMask) != 0 && (upperdiag != 0 || lowerdiag != 0)) {
                 if (upperdiag != 0) {
-                    if (pieceAppend(bishop, upperdiag, color) == 0) {
+                    if (pieceAppend(bishop, upperdiag, type, color) == 0) {
                         upperdiag = upperdiag << 9; // Bishop hit an empty square, can continue on the diagonal.
                     }
                     else {
@@ -287,7 +373,7 @@ public class MoveGenerator {
                     }
                 }
                 if (lowerdiag != 0) {
-                    if (pieceAppend(bishop, lowerdiag, color) == 0) {
+                    if (pieceAppend(bishop, lowerdiag, type, color) == 0) {
                         lowerdiag = lowerdiag >>> 7; // Bishop hit an empty square, can continue on the diagonal.
                     }
                     else {
@@ -301,7 +387,7 @@ public class MoveGenerator {
         }
     }
 
-    private void knightAppend(long knights, GamePiece.PieceColor color) {
+    private void knightAppend(long knights, Piece.Color color) {
         long knightMask;
         while (knights != 0) {
             long knight = knights & -knights;
@@ -313,34 +399,40 @@ public class MoveGenerator {
             }
             if (((knight >>> 1) & knightMask) != 0) {
                 if (((knight >>> 2) & knightMask) != 0) {
-                    pieceAppend(knight, (knight << 8) >>> 2, color);
-                    pieceAppend(knight, (knight >>> 8) >>> 2, color);
+                    pieceAppend(knight, (knight << 8) >>> 2, Piece.Type.KNIGHT, color);
+                    pieceAppend(knight, (knight >>> 8) >>> 2, Piece.Type.KNIGHT, color);
                 }
-                pieceAppend(knight, (knight << 16) >>> 1, color);
-                pieceAppend(knight, (knight >>> 16) >>> 1, color);
+                pieceAppend(knight, (knight << 16) >>> 1, Piece.Type.KNIGHT, color);
+                pieceAppend(knight, (knight >>> 16) >>> 1, Piece.Type.KNIGHT, color);
             }
 
             if (((knight << 1) & knightMask) != 0) {
                 if (((knight << 2) & knightMask) != 0) {
-                    pieceAppend(knight, (knight << 8) << 2, color);
-                    pieceAppend(knight, (knight >>> 8) << 2, color);
+                    pieceAppend(knight, (knight << 8) << 2, Piece.Type.KNIGHT, color);
+                    pieceAppend(knight, (knight >>> 8) << 2, Piece.Type.KNIGHT, color);
                 }
-                pieceAppend(knight, (knight << 16) << 1, color);
-                pieceAppend(knight, (knight >>> 16) << 1, color);
+                pieceAppend(knight, (knight << 16) << 1, Piece.Type.KNIGHT, color);
+                pieceAppend(knight, (knight >>> 16) << 1, Piece.Type.KNIGHT, color);
             }
             knights ^= knight;
         }
     }
 
-    private void pawnCapture(long oldLoc, long newLoc, GamePiece.PieceColor pieceColor) {
-        Square newSquare = bitToPos(newLoc);
-        Square oldSquare = bitToPos(oldLoc);
+    private void pawnCapture(long oldLoc, long newLoc, Piece.Color color) {
         if (newLoc != 0) {
-            // avoid the method call if the newLoc extends below or above the board.
-            GamePiece captured = bitboard.getPiece(newSquare);
+            Piece captured = bitboard.getPiece(newLoc);
             if (captured != null) {
-                if (pieceColor != captured.getColor()) {
-                    possibleMoves.add(new Move(oldSquare, newSquare, captured.getType())); // opponent piece captured
+                if (color != captured.color) {
+                    if ((newLoc & 0xFF000000000000FFL) != 0) {
+                        // Captured piece AND pawn promotion
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.KNIGHT));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.BISHOP));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.QUEEN));
+                    }
+                    else {
+                        // Captured piece
+                        possibleMoves.add(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.NONE); // opponent piece captured
+                    }
                 }
             }
         }
@@ -354,50 +446,31 @@ public class MoveGenerator {
      *      single bit representing original location where piece started.
      * @param newLoc
      *      single bit representing location that piece was moved to.
-     * @param pieceColor
+     * @param color
      *      color of the piece that is moved
      * @return 0 if new location was an empty space
      *         1 if opponent piece captured at new location
      *        -1 if new location stored invoking player colored piece
      *        -2 if new location is off the board
      */
-    private int pieceAppend(long oldLoc, long newLoc, GamePiece.PieceColor pieceColor) {
+    private int pieceAppend(long oldLoc, long newLoc, Piece.Type type, Piece.Color color) {
         // check to see if piece move is legal (no piece of same color) and append it whether it has captured
         // a black piece or not. Assumes the locations are valid and checked before function call.
-        Square newSquare = bitToPos(newLoc);
-        Square oldSquare = bitToPos(oldLoc);
         if (newLoc != 0) {
             // avoid the method call if the newLoc extends below or above the board.
-            GamePiece captured = bitboard.getPiece(newSquare);
+            Piece captured = bitboard.getPiece(newLoc);
             if (captured != null) {
-                if (pieceColor != captured.getColor()) {
-                    possibleMoves.add(new Move(oldSquare, newSquare, captured.getType())); // opponent piece captured
+                if (color != captured.color) {
+                    possibleMoves.add(oldLoc, newLoc, new Piece(type, color), captured.type, Piece.Type.NONE); // opponent piece captured
                     return 1;
                 }
                 return -1;
             }
             else {
-                possibleMoves.add(new Move(oldSquare, newSquare)); // empty square
+                possibleMoves.add(oldLoc, newLoc, new Piece(type, color), Piece.Type.NONE, Piece.Type.NONE); // empty square
                 return 0;
             }
         }
         return -2;
-    }
-
-
-    private Square bitToPos(long bit) {
-        int yPos = 0;
-        while (bit > 0x80) {
-            bit = bit >>> 8;
-            yPos += 1;
-        }
-
-        int xPos = 0;
-        while (bit > 0x1) {
-            bit = bit >> 1;
-            xPos += 1;
-        }
-
-        return new Square(xPos, yPos);
     }
 }
