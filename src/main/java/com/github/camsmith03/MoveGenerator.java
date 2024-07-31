@@ -1,5 +1,4 @@
 package com.github.camsmith03;
-import java.util.ArrayList;
 
 public class MoveGenerator {
     private final long alternatingByteMask = 0xFF00FF00FF00FF00L;
@@ -247,19 +246,19 @@ public class MoveGenerator {
         pieceAppend(king, king >>> 8, Piece.Type.KING, color);
 
         int colorIndex = color.ordinal();
-        if (bitboard.castleMasks[colorIndex] != 0) {
+        if (bitboard.castleCheckMasks[colorIndex] != 0) {
             // Check Queen side castle
             long boardColor = bitboard.getBoardColor(color);
             if ((boardColor & queenSideCastleCheck[colorIndex]) == 0) {
                 Move queenSideCastle = new Move(0, 0, new Piece(Piece.Type.KING, color));
-                queenSideCastle.setCastledRook(bitboard.castleMasks[colorIndex] & 0x0100000000000001L);
+                queenSideCastle.setCastledRook(Move.CastleSide.QUEEN_SIDE);
                 possibleMoves.addMove(queenSideCastle);
             }
 
             // Check King side castle
             if ((boardColor & kingSideCastleCheck[colorIndex]) == 0) {
                 Move kingSideCastle = new Move(0, 0, new Piece(Piece.Type.KING, color));
-                kingSideCastle.setCastledRook(bitboard.castleMasks[colorIndex] & 0x8000000000000080L);
+                kingSideCastle.setCastledRook(Move.CastleSide.KING_SIDE);
                 possibleMoves.addMove(kingSideCastle);
             }
 

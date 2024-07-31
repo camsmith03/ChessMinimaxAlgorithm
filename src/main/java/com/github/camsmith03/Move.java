@@ -5,13 +5,15 @@ package com.github.camsmith03;
  *
  */
 public class Move {
+    public enum CastleSide {QUEEN_SIDE, KING_SIDE, NONE};
+
     private long from;
     private long to;
     private Piece movedPiece;
     private Piece.Type capturedPiece;
     private Piece.Type promotedType;
     private long enPassantCapturedPiece = 0;
-    private long castledRook = 0;
+    private CastleSide castledRook;
 
     public Move(long fromMask, long toMask, Piece movedPiece) {
         this.from = fromMask;
@@ -19,6 +21,7 @@ public class Move {
         this.movedPiece = movedPiece;
         capturedPiece = Piece.Type.NONE;
         promotedType = Piece.Type.NONE;
+        castledRook = CastleSide.NONE;
     }
 
     public Move(long fromMask, long toMask, Piece movedPiece, Piece.Type capturedPiece) {
@@ -27,6 +30,7 @@ public class Move {
         this.movedPiece = movedPiece;
         this.capturedPiece = capturedPiece;
         promotedType = Piece.Type.NONE;
+        castledRook = CastleSide.NONE;
     }
 
     public Move(long fromMask, long toMask, Piece movedPiece, Piece.Type capturedPiece, Piece.Type promotedType) {
@@ -38,14 +42,15 @@ public class Move {
         this.movedPiece = movedPiece;
         this.capturedPiece = capturedPiece;
         this.promotedType = promotedType;
+        castledRook = CastleSide.NONE;
     }
 
-    public long getCastledRook() {
+    public CastleSide getCastledRook() {
         return castledRook;
     }
 
-    public void setCastledRook(long rookMask) {
-        castledRook = rookMask;
+    public void setCastledRook(CastleSide castledSide) {
+        castledRook = castledSide;
     }
 
     public void setEnPassant(long capturedPieceMask) {
@@ -112,7 +117,7 @@ public class Move {
             throw new IllegalArgumentException("Promoted piece must be a pawn");
         }
         enPassantCapturedPiece = 0;
-        castledRook = 0;
+        castledRook = CastleSide.NONE;
         return this;
     }
 }
