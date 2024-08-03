@@ -18,9 +18,9 @@ public class MoveList {
         return moves[getLLIndex(color, type)];
     }
 
-    public void add(long fromMask, long toMask, Piece piece, Piece.Type capturedType, Piece.Type promotedType) {
-        int index = getLLIndex(piece.color, piece.type);
-        LinkedList.Node<Move> move = freeList.getMove(fromMask, toMask, piece, capturedType, promotedType);
+    public void add(long fromMask, long toMask, Piece.Type pieceType, Piece.Color pieceColor, Piece.Type capturedType, Piece.Type promotedType) {
+        int index = getLLIndex(pieceColor, pieceType);
+        LinkedList.Node<Move> move = freeList.getMove(fromMask, toMask, pieceType, pieceColor, capturedType, promotedType);
         move.next = moves[index].head;
         moves[index].head = move;
     }
@@ -31,7 +31,7 @@ public class MoveList {
     }
 
     public void addMove(Move move) {
-        int index = getLLIndex(move.getMovedColor(), move.getMovedType());
+        int index = getLLIndex(move.getMovedPieceColor(), move.getMovedPieceType());
         LinkedList.Node<Move> addedNode = new LinkedList.Node<>();
         addedNode.data = move;
         addedNode.next = moves[index].head;
@@ -40,7 +40,7 @@ public class MoveList {
 
     public void clearList() {
         for (int i = 0; i < LIST_SIZE; i++) {
-            moves[i].head = null;
+            moves[i].head = null; // TODO: instead of nulling it out, garbage collect unused move nodes
         }
     }
 
@@ -59,7 +59,7 @@ public class MoveList {
     }
 
 
-    private class FreeMoves {
+    private static class FreeMoves {
         private final LinkedList<Move> freeMoves;
         private int size;
 
@@ -74,10 +74,15 @@ public class MoveList {
             size += 1;
         }
 
-        public LinkedList.Node<Move> getMove(long from, long to, Piece moved, Piece.Type capturedPiece, Piece.Type promotedPiece) {
+        public LinkedList.Node<Move> getMove(long from, long to, Piece.Type pieceType, Piece.Color pieceColor, Piece.Type capturedPiece, Piece.Type promotedPiece) {
             if (size == 0) {
                 LinkedList.Node<Move> moveNode = new LinkedList.Node<>();
-                moveNode.data = new Move(from, to, moved, capturedPiece, promotedPiece);
+                if (promotedPiece != Piece.Type.NONE) {
+                    moveNode.data = new Move(from, to, pieceType, pieceColor, capturedPiece, promotedPiece);
+                }
+                else {
+                    moveNode.data = new Move(from, to, pieceType, pieceColor, capturedPiece);
+                }
                 return moveNode;
             }
             size -= 1;
@@ -85,7 +90,7 @@ public class MoveList {
             LinkedList.Node<Move> rebuilt = freeMoves.head;
             freeMoves.head = rebuilt.next;
             rebuilt.next = null;
-            rebuilt.data.rebuild(from, to, moved, capturedPiece, promotedPiece);
+            rebuilt.data.rebuild(from, to, pieceType, pieceColor, capturedPiece, promotedPiece);
 
             return rebuilt;
         }

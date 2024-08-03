@@ -4,6 +4,8 @@ public class MoveGenerator {
     private final long alternatingByteMask = 0xFF00FF00FF00FF00L;
     private MoveList possibleMoves;
     private Bitboard bitboard;
+    private long[][] boards;
+//    private long[] colorBoards;
     private final long[] queenSideCastleCheck = new long[]{0x0E, 0xE000000000000000L};
     private final long[] kingSideCastleCheck = new long[]{0x60, 0x06000000000000L};
 
@@ -11,12 +13,17 @@ public class MoveGenerator {
      * Generates all moves, even those that may be illegal (putting king in check, etc.)
      *
      */
-    public MoveList generateMoves(Bitboard board, Piece.Color turnToMove) {
+    public MoveList generateMoves(Bitboard bitboard, Piece.Color turnToMove) {
         possibleMoves = new MoveList();
-        bitboard = board;
+        this.bitboard = bitboard;
+        boards = bitboard.getBoards();
+//        colorBoards = new long[]{
+//                bitboard.getBoardColor(Piece.Color.WHITE),
+//                bitboard.getBoardColor(Piece.Color.BLACK)
+//        };
 
         if (turnToMove == Piece.Color.WHITE) {
-            long[] white = bitboard.getWhitePieceBitboards();
+            long[] white = boards[0];
             // ==============  Pawns  ==============
             whitePawnAppend(white[0]);
             // ============== Knights ==============
@@ -32,7 +39,7 @@ public class MoveGenerator {
             kingAppend(white[5], Piece.Color.WHITE);
         }
         else {
-            long[] black = bitboard.getBlackPieceBitboards();
+            long[] black = boards[1];
             // ==============  Pawns  ==============
             blackPawnAppend(black[0]);
             // ============== Knights ==============
@@ -60,9 +67,9 @@ public class MoveGenerator {
             long pawn = pawnMoves1 & -pawnMoves1;
             if ((pawn & 0xFF00000000000000L) != 0) {
                 // Pawn promoted
-                possibleMoves.addMove(new Move(pawn >>> 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.NONE, Piece.Type.KNIGHT));
-                possibleMoves.addMove(new Move(pawn >>> 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.NONE, Piece.Type.BISHOP));
-                possibleMoves.addMove(new Move(pawn >>> 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.NONE, Piece.Type.QUEEN));
+                possibleMoves.add(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.NONE, Piece.Type.KNIGHT);
+                possibleMoves.add(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.NONE, Piece.Type.BISHOP);
+                possibleMoves.add(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.NONE, Piece.Type.QUEEN);
             }
             else {
                 pieceAppend(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE);
@@ -110,8 +117,7 @@ public class MoveGenerator {
             long blackPawn = bitboard.enPassantBoard ^ whitePawns;
             long whitePawn = whitePawns & -whitePawns;
 
-            Move enPassant = new Move(whitePawn, blackPawn << 8,
-                    new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.PAWN);
+            Move enPassant = new Move(whitePawn, blackPawn << 8, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.PAWN);
 
             enPassant.setEnPassant(blackPawn);
             possibleMoves.addMove(enPassant);
@@ -121,8 +127,7 @@ public class MoveGenerator {
                 // Double en passant (two white pawns can perform the attack)
                 // Rare, but plausible, so condition is here to ensure correct moves generated
                 whitePawn ^= whitePawns;
-                enPassant = new Move(whitePawn, blackPawn << 8,
-                        new Piece(Piece.Type.PAWN, Piece.Color.WHITE), Piece.Type.PAWN);
+                enPassant = new Move(whitePawn, blackPawn << 8, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.PAWN);
 
                 enPassant.setEnPassant(blackPawn);
                 possibleMoves.addMove(enPassant);
@@ -135,10 +140,10 @@ public class MoveGenerator {
 
         For pawn movements, any space that is capture-able must have a bit falling within the same mask as the original
         space (after moving up). The masks are inverses of alternating bytes. This behavior isn't obvious at first, but
-        one can notice that for the 8 squares per file, it corresponds to 8 bits. Thus, each file follows the
-        alternating set of bytes. So whenever the pawn is on the far left or right rank, we can automatically determine
-        whether a legal move is valid based on is file's mask (as looping over would increase or decrease a file thus
-        changing the mask).
+        one can notice that the 8 squares per file, corresponds to 8 bits. Thus, each file follows the alternating set
+        of bytes. So whenever the pawn is on the far left or right rank, we can automatically determine whether a legal
+        move is valid based on is file's mask (as looping over would increase or decrease a file thus changing the
+        mask).
          */
     }
 
@@ -152,9 +157,9 @@ public class MoveGenerator {
 
             if ((pawn & 0x00FF) != 0) {
                 // Promoted Pawns
-                possibleMoves.addMove(new Move(pawn << 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.NONE, Piece.Type.KNIGHT));
-                possibleMoves.addMove(new Move(pawn << 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.NONE, Piece.Type.BISHOP));
-                possibleMoves.addMove(new Move(pawn << 8, pawn, new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.NONE, Piece.Type.QUEEN));
+                possibleMoves.add(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK, Piece.Type.NONE, Piece.Type.KNIGHT);
+                possibleMoves.add(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK, Piece.Type.NONE, Piece.Type.BISHOP);
+                possibleMoves.add(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK, Piece.Type.NONE, Piece.Type.QUEEN);
             }
             else {
                 pieceAppend(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK);
@@ -201,8 +206,8 @@ public class MoveGenerator {
             long whitePawn = bitboard.enPassantBoard ^ blackPawns;
             long blackPawn = blackPawns & -blackPawns;
 
-            Move enPassant = new Move(blackPawn, whitePawn >>> 8,
-                    new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.PAWN);
+            Move enPassant = new Move(blackPawn, whitePawn >>> 8, Piece.Type.PAWN, Piece.Color.BLACK,
+                    Piece.Type.PAWN);
 
             enPassant.setEnPassant(whitePawn);
             possibleMoves.addMove(enPassant);
@@ -212,8 +217,8 @@ public class MoveGenerator {
                 // Double en passant (two black pawns can perform attack)
                 // Rare, but plausible, so condition is here to ensure correct moves generated
                 blackPawn ^= blackPawns;
-                enPassant = new Move(blackPawn, whitePawn >>> 8,
-                        new Piece(Piece.Type.PAWN, Piece.Color.BLACK), Piece.Type.PAWN);
+                enPassant = new Move(blackPawn, whitePawn >>> 8, Piece.Type.PAWN, Piece.Color.BLACK,
+                        Piece.Type.PAWN);
 
                 enPassant.setEnPassant(whitePawn);
                 possibleMoves.addMove(enPassant);
@@ -246,18 +251,18 @@ public class MoveGenerator {
         pieceAppend(king, king >>> 8, Piece.Type.KING, color);
 
         int colorIndex = color.ordinal();
-        if (bitboard.castleCheckMasks[colorIndex] != 0) {
+        if (boards[colorIndex][6] != 0) {
             // Check Queen side castle
             long boardColor = bitboard.getBoardColor(color);
             if ((boardColor & queenSideCastleCheck[colorIndex]) == 0) {
-                Move queenSideCastle = new Move(0, 0, new Piece(Piece.Type.KING, color));
+                Move queenSideCastle = new Move(0, 0, Piece.Type.KING, color);
                 queenSideCastle.setCastledRook(Move.CastleSide.QUEEN_SIDE);
                 possibleMoves.addMove(queenSideCastle);
             }
 
             // Check King side castle
             if ((boardColor & kingSideCastleCheck[colorIndex]) == 0) {
-                Move kingSideCastle = new Move(0, 0, new Piece(Piece.Type.KING, color));
+                Move kingSideCastle = new Move(0, 0, Piece.Type.KING, color);
                 kingSideCastle.setCastledRook(Move.CastleSide.KING_SIDE);
                 possibleMoves.addMove(kingSideCastle);
             }
@@ -424,13 +429,13 @@ public class MoveGenerator {
                 if (color != captured.color) {
                     if ((newLoc & 0xFF000000000000FFL) != 0) {
                         // Captured piece AND pawn promotion
-                        possibleMoves.addMove(new Move(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.KNIGHT));
-                        possibleMoves.addMove(new Move(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.BISHOP));
-                        possibleMoves.addMove(new Move(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.QUEEN));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.KNIGHT));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.BISHOP));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.QUEEN));
                     }
                     else {
                         // Captured piece
-                        possibleMoves.add(oldLoc, newLoc, new Piece(Piece.Type.PAWN, color), captured.type, Piece.Type.NONE); // opponent piece captured
+                        possibleMoves.add(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.NONE); // opponent piece captured
                     }
                 }
             }
@@ -460,13 +465,13 @@ public class MoveGenerator {
             Piece captured = bitboard.getPiece(newLoc);
             if (captured != null) {
                 if (color != captured.color) {
-                    possibleMoves.add(oldLoc, newLoc, new Piece(type, color), captured.type, Piece.Type.NONE); // opponent piece captured
+                    possibleMoves.add(oldLoc, newLoc, type, color, captured.type, Piece.Type.NONE); // opponent piece captured
                     return 1;
                 }
                 return -1;
             }
             else {
-                possibleMoves.add(oldLoc, newLoc, new Piece(type, color), Piece.Type.NONE, Piece.Type.NONE); // empty square
+                possibleMoves.add(oldLoc, newLoc, type, color, Piece.Type.NONE, Piece.Type.NONE); // empty square
                 return 0;
             }
         }

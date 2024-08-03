@@ -6,43 +6,37 @@ package com.github.camsmith03;
  */
 public class Move {
     public enum CastleSide {QUEEN_SIDE, KING_SIDE, NONE};
-
     private long from;
     private long to;
-    private Piece movedPiece;
-    private Piece.Type capturedPiece;
+    private Piece.Type movedPieceType;
+    private Piece.Color movedPieceColor;
+    private Piece.Type capturedPieceType;
     private Piece.Type promotedType;
     private long enPassantCapturedPiece = 0;
     private CastleSide castledRook;
 
-    public Move(long fromMask, long toMask, Piece movedPiece) {
+    public Move(long fromMask, long toMask, Piece.Type movedPieceType, Piece.Color movedPieceColor) {
         this.from = fromMask;
         this.to = toMask;
-        this.movedPiece = movedPiece;
-        capturedPiece = Piece.Type.NONE;
+        this.movedPieceType = movedPieceType;
+        this.movedPieceColor = movedPieceColor;
+        capturedPieceType = Piece.Type.NONE;
         promotedType = Piece.Type.NONE;
         castledRook = CastleSide.NONE;
     }
 
-    public Move(long fromMask, long toMask, Piece movedPiece, Piece.Type capturedPiece) {
-        this.from = fromMask;
-        this.to = toMask;
-        this.movedPiece = movedPiece;
-        this.capturedPiece = capturedPiece;
-        promotedType = Piece.Type.NONE;
-        castledRook = CastleSide.NONE;
+    public Move(long fromMask, long toMask, Piece.Type movedPieceType, Piece.Color movedPieceColor, Piece.Type capturedPieceType) {
+        this(fromMask, toMask, movedPieceType, movedPieceColor);
+        this.capturedPieceType = capturedPieceType;
     }
 
-    public Move(long fromMask, long toMask, Piece movedPiece, Piece.Type capturedPiece, Piece.Type promotedType) {
-        if (movedPiece.type != Piece.Type.PAWN)
+    public Move(long fromMask, long toMask, Piece.Type movedPieceType, Piece.Color movedPieceColor, Piece.Type capturedPiece, Piece.Type promotedType) {
+        this(fromMask, toMask, movedPieceType, movedPieceColor, capturedPiece);
+
+        if (movedPieceType != Piece.Type.PAWN)
             throw new IllegalArgumentException("Promoted piece must be a pawn");
 
-        this.from = fromMask;
-        this.to = toMask;
-        this.movedPiece = movedPiece;
-        this.capturedPiece = capturedPiece;
         this.promotedType = promotedType;
-        castledRook = CastleSide.NONE;
     }
 
     public CastleSide getCastledRook() {
@@ -69,20 +63,16 @@ public class Move {
         return to;
     }
 
-    public Piece getMovedPiece() {
-        return movedPiece;
+    public Piece.Type getMovedPieceType() {
+        return movedPieceType;
     }
 
-    public Piece.Type getMovedType() {
-        return movedPiece.type;
-    }
-
-    public Piece.Color getMovedColor() {
-        return movedPiece.color;
+    public Piece.Color getMovedPieceColor() {
+        return movedPieceColor;
     }
 
     public Piece.Type getCapturedPieceType() {
-        return capturedPiece;
+        return capturedPieceType;
     }
 
     public Piece.Type getPromotedType() {
@@ -101,19 +91,20 @@ public class Move {
         Move move = (Move) o;
 
         if (from == move.from && to == move.to) {
-            return capturedPiece == move.capturedPiece;
+            return capturedPieceType == move.capturedPieceType;
         }
 
         return false;
     }
 
-    public Move rebuild(long fromMask, long toMask, Piece movedPiece, Piece.Type capturedPiece, Piece.Type promotedType) {
+    public Move rebuild(long fromMask, long toMask, Piece.Type movedPieceType, Piece.Color movedPieceColor, Piece.Type capturedPieceType, Piece.Type promotedType) {
         this.from = fromMask;
         this.to = toMask;
-        this.movedPiece = movedPiece;
-        this.capturedPiece = capturedPiece;
+        this.movedPieceType = movedPieceType;
+        this.movedPieceColor = movedPieceColor;
+        this.capturedPieceType = capturedPieceType;
         this.promotedType = promotedType;
-        if (promotedType != Piece.Type.NONE && movedPiece.type != Piece.Type.PAWN) {
+        if (promotedType != Piece.Type.NONE && movedPieceType != Piece.Type.PAWN) {
             throw new IllegalArgumentException("Promoted piece must be a pawn");
         }
         enPassantCapturedPiece = 0;

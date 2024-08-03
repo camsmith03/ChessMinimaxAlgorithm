@@ -27,7 +27,7 @@ public class Board {
         turnToMove = Piece.Color.WHITE;
     }
 
-    public void move(Move movedPiece) {
+    public void move(Move movedPiece) throws IllegalArgumentException {
         gameBoard.movePiece(movedPiece);
         changeTurn();
     }
@@ -41,27 +41,11 @@ public class Board {
         }
     }
 
-    public MoveList getLegalMoves() {
-        MoveList possibleMoves = moveGenerator.generateMoves(gameBoard, turnToMove);
-
-
-        return null;
+    public Piece.Color getTurn() {
+        return turnToMove;
     }
 
-    /**
-     * Things to filter:
-     *      -> Pawn en passant
-     *      -> King in check
-     *          -> Illegally putting king in check
-     *      -> Castling behavior
-     *      -> Pawn promotion
-     *
-     * NOTE: This is handled by the evaluator!
-     *          -> Illegal moves when king currently in check
-     *
-     * @param possibleMoves
-     */
-    private void filterMoves(ArrayList<Move> possibleMoves) {
-
+    public MoveList getLegalMoves() {
+        return moveGenerator.generateMoves(gameBoard, turnToMove);
     }
 }
