@@ -48,4 +48,8 @@ public class Board {
     public MoveList getLegalMoves() {
         return moveGenerator.generateMoves(gameBoard, turnToMove);
     }
+
+    public Piece getPiece(long position) {
+        return gameBoard.getPiece(position);
+    }
 }
