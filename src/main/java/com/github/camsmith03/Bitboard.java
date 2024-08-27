@@ -54,11 +54,11 @@ public class Bitboard {
 
 
     // Board backing storage fields
-    private final long[][] boards = new long[2][];
+    private long[][] boards = new long[2][];
     private long gameBoard;
     private long whiteBoard;
     private long blackBoard;
-    private final long[] tempColorBoards;
+    private long[] tempColorBoards;
 
     // Storage allocated to undo moves that lead to positions that place the king in check
     private final long[][] tempBoards = new long[2][]; // Copy of boards to allow for virtual nondestructive, movements.
@@ -157,11 +157,11 @@ public class Bitboard {
                 0, // kDown
                 whiteKingLeftMask  |  0x30,
                 whiteKingRightMask ^  0x60,
-                0x000102040810200L, // diagUL
-                0x000000000008000L, // diagUR
+                0x0001020408102000L, // diagUL
+                0x0000000000008000L, // diagUR
                 0, // diagLL
                 0, // diagLR
-                0x0000000000A1000L // knights
+                0x000000000A01000L // knights
         };
 
         long[] whiteQueenSideMasks = new long[]{
@@ -249,16 +249,18 @@ public class Bitboard {
                 tempBoards[1 - colorIndex][capture] ^= to; // update temp board to removed captured piece
                 tempColorBoards[1 - colorIndex] ^= to;
 
+
                 // Append the temp board change to the history table, allowing a backtrack mechanism to undo said change
                 appendChange(1 - colorIndex, capture);
             }
-            else if (move.getMovedPieceType() == Piece.Type.PAWN) {
+
+            if (move.getMovedPieceType() == Piece.Type.PAWN) {
                 if (move.getPromotedType() != Piece.Type.NONE) {
                     // if pawn was promoted
                     updatePawnPromotion(move);
                 }
                 else if (enPassantBit != 0) {
-                    // an en passant capture is made. update with the saved location of the
+                    // an en passant capture is made. update with the saved location of the captured pawn
                     tempBoards[1 - colorIndex][0] ^= enPassantBit;
                     tempColorBoards[1 - colorIndex] ^= enPassantBit;
 
@@ -282,6 +284,7 @@ public class Bitboard {
             else if (move.getMovedPieceType() == Piece.Type.ROOK && tempBoards[colorIndex][6] != 0) {
                 // Indicate that a rook looses its castling privileges once it moves past its starting position.
                 tempBoards[colorIndex][6] ^= from;
+
 
                 // add change to the history stack
                 appendChange(colorIndex, 6);
@@ -317,6 +320,10 @@ public class Bitboard {
         // the core boards themselves.
         if (!virtualState) {
             applyChanges();
+        }
+        else {
+            // if we are in a virtual state, update our gameBoard so any calls to getPiece use the virtual state boards
+            gameBoard = tempColorBoards[colorIndex] | tempColorBoards[1 - colorIndex];
         }
     }
 
@@ -358,8 +365,8 @@ public class Bitboard {
      */
     private void discardChanges() {
         while (changeHistSize > 0) {
-            int colorIndex = changeHist[--changeHistSize];
             int boardIndex = changeHist[--changeHistSize];
+            int colorIndex = changeHist[--changeHistSize];
             tempBoards[colorIndex][boardIndex] = boards[colorIndex][boardIndex];
         }
         tempColorBoards[0] = whiteBoard;
@@ -473,6 +480,32 @@ public class Bitboard {
     }
 
 
+    // TODO: Refactor to use virtualization. This is inefficient.
+    public SaveState saveCurrentState() {
+        return new SaveState(tempBoards, tempColorBoards, enPassantBoard);
+    }
+
+    // TODO: Refactor to use virtualization. This is inefficient.
+    public void restoreSaveState(SaveState saveState) {
+        virtualLock = false;
+        virtualState = false;
+
+        System.arraycopy(saveState.boards[0], 0, this.boards[0], 0, 18);
+        System.arraycopy(saveState.boards[1], 0, this.boards[1], 0, 18);
+        System.arraycopy(saveState.colorBoards, 0, tempColorBoards, 0, 2);
+
+        this.enPassantBoard = saveState.epBoard;
+
+        for (int i = 0; i < 18; i++) {
+            tempBoards[0][i] = boards[0][i];
+            tempBoards[1][i] = boards[1][i];
+        }
+        whiteBoard = tempColorBoards[0];
+        blackBoard = tempColorBoards[1];
+        gameBoard = whiteBoard | blackBoard;
+        changeHistSize = 0;
+    }
+
     /**
      * Castles the king in the king side or queen side configuration as indicated by the Move input. This will also
      * update the king masking bits to their precomputed default values. These changes are made to the temporary boards
@@ -489,12 +522,14 @@ public class Bitboard {
                 tempBoards[0][3] ^= 0x01; // remove original rook
                 tempBoards[0][3] |= 0x08; // add the castled rooks new location
                 tempBoards[0][5]  = 0x04; // add the king's location
+                tempColorBoards[0] ^= 0x0F; // update the white color board
             }
             else {
                 // Castled King side
                 tempBoards[0][3] ^= 0x80; // remove original rook
                 tempBoards[0][3] |= 0x20; // add the castled rooks new location
                 tempBoards[0][5]  = 0x40; // add the king's location
+                tempColorBoards[0] ^= 0xF0; // update the white color board
             }
         }
         else {
@@ -504,12 +539,14 @@ public class Bitboard {
                 tempBoards[1][3] ^= 0x0100000000000000L; // remove original rook
                 tempBoards[1][3] |= 0x0800000000000000L; // add the castled rooks new location
                 tempBoards[1][5]  = 0x0400000000000000L; // add the king's location
+                tempColorBoards[1] ^= 0x0F00000000000000L; // update the black color board
             }
             else {
                 // Castled King side
                 tempBoards[0][3] ^= 0x8000000000000000L; // remove original rook
                 tempBoards[0][3] |= 0x2000000000000000L; // add the castled rooks new location
                 tempBoards[0][5]  = 0x4000000000000000L; // add the king's location
+                tempColorBoards[0] ^= 0xF000000000000000L; // update the black color board
             }
         }
         int colorIndex = move.getMovedPieceColor().ordinal();
@@ -539,7 +576,7 @@ public class Bitboard {
             Piece.Color color;
             long[] pieceBitboards;
 
-            if ((whiteBoard & mask) != 0) {
+            if ((tempColorBoards[0] & mask) != 0) {
                 color = Piece.Color.WHITE;
                 pieceBitboards = tempBoards[0];
             }
@@ -643,6 +680,10 @@ public class Bitboard {
         return tempBoards;
     }
 
+    public long[] getVirtualColorBoards() {
+        return tempColorBoards;
+    }
+
     public long getGameBoard() {
         return gameBoard;
     }
@@ -681,10 +722,10 @@ public class Bitboard {
      *      Color ordinal value of king to inspect.
      * @return true if king is in check; false otherwise.
      */
-    private boolean kingMaskCheck(int colorIndex) {
-
-        long colorBoard = getBoardColorIndex(colorIndex);
-        long oppColorBoard = getBoardColorIndex(1 - colorIndex);
+    public boolean kingMaskCheck(int colorIndex) {
+        long tempGameBoard = tempColorBoards[0] | tempColorBoards[1];
+        long colorBoard = tempColorBoards[colorIndex];
+        long oppColorBoard = tempColorBoards[1 - colorIndex];
         long kUp     = tempBoards[colorIndex][9];
         long kDown   = tempBoards[colorIndex][10];
         long kLeft   = tempBoards[colorIndex][11];
@@ -696,8 +737,8 @@ public class Bitboard {
         long diagLR  = tempBoards[colorIndex][16];
         long knights = tempBoards[colorIndex][17];
 
-        long kUpPiece = (kUp & gameBoard) & -(kUp & gameBoard);
-        if ((colorBoard & kUpPiece) == 0 && (oppColorBoard & kUpPiece) != 0) {
+        long kUpPiece = (kUp & tempGameBoard) & -(kUp & tempGameBoard);
+        if ((oppColorBoard & kUpPiece) != 0) {
             // See if king is vulnerable above and check to see if an opposing piece of threat is above
 
             // Only candidates for check are enemy Queen or Rook
@@ -706,12 +747,13 @@ public class Bitboard {
 
         }
 
-        long kDownPieces = kDown & gameBoard;
+        long kDownPieces = kDown & tempGameBoard;
         if ((colorBoard & kDownPieces) < (oppColorBoard & kDownPieces)) {
             // if our pieces are less than the opp pieces (for kDown), the opp piece is higher up than ours.
 
             // We know opposing piece is below, but need to check which one is of direct threat along the attack vector.
             long kingPos = tempBoards[colorIndex][5];
+
             long pieceOfThreat = getMSB(oppColorBoard & kDownPieces, kingPos, 8);
 
             // Only candidates of threat are Rook or Queen
@@ -719,7 +761,7 @@ public class Bitboard {
                 || (pieceOfThreat & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
         }
 
-        long kLeftPieces = kLeft & gameBoard;
+        long kLeftPieces = kLeft & tempGameBoard;
         if ((colorBoard & kLeftPieces) < (oppColorBoard & kLeftPieces)) {
             // opponent has a piece in front of our own along the attack vector.
 
@@ -732,8 +774,8 @@ public class Bitboard {
                 || (pieceOfThreat & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
         }
 
-        long kRightPiece = (kRight & gameBoard) & -(kRight & gameBoard);
-        if ((colorBoard & kRightPiece) == 0 && (oppColorBoard & kRightPiece) != 0) {
+        long kRightPiece = (kRight & tempGameBoard) & -(kRight & tempGameBoard);
+        if ((oppColorBoard & kRightPiece) != 0) {
             // King is vulnerable to the right, and an enemy piece is of direct threat
 
             // Only candidates of threat are Rook or Queen
@@ -742,31 +784,28 @@ public class Bitboard {
         }
 
 
-        long diagULPiece = (diagUL & gameBoard) & -(diagUL & gameBoard);
-        if ((colorBoard & diagULPiece) == 0) {
+        long diagULPiece = (diagUL & tempGameBoard) & -(diagUL & tempGameBoard);
+        if ((oppColorBoard & diagULPiece) != 0) {
             // King is compromised on the upper left diagonal
 
-            // Check to see if opposing piece on diagonal
-            if ((oppColorBoard & diagULPiece) != 0) {
-                // See if opposing color piece has attack on King
+            // See if opposing color piece has attack on King
 
-                // Can be a pawn if diagULPiece == kingPos >> 7 (for white or black)
-                if (diagULPiece == (tempBoards[colorIndex][5] >> 7)) {
-                    return (diagULPiece & tempBoards[1 - colorIndex][0]) != 0 // piece is a pawn
-                        || (diagULPiece & tempBoards[1 - colorIndex][2]) != 0 // piece is a bishop
-                        || (diagULPiece & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
-                }
-
-                // Can be a Bishop or Queen in any compromised square
-                return (diagULPiece & tempBoards[1 - colorIndex][2]) != 0 // piece is a bishop
+            // Can be a pawn if diagULPiece == kingPos >> 7 (for white or black)
+            if (diagULPiece == (tempBoards[colorIndex][5] >> 7)) {
+                return (diagULPiece & tempBoards[1 - colorIndex][0]) != 0 // piece is a pawn
+                    || (diagULPiece & tempBoards[1 - colorIndex][2]) != 0 // piece is a bishop
                     || (diagULPiece & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
-
             }
+
+            // Can be a Bishop or Queen in any compromised square
+            return (diagULPiece & tempBoards[1 - colorIndex][2]) != 0 // piece is a bishop
+                || (diagULPiece & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
+
         }
 
-        long diagURPiece = (diagUR & gameBoard) & -(diagUR & gameBoard);
-        if ((colorBoard & diagURPiece) == 0 && (oppColorBoard & diagURPiece) != 0) {
-            // King is compromised on the upper right diagonal and opposing piece on diagonal
+        long diagURPiece = (diagUR & tempGameBoard) & -(diagUR & tempGameBoard);
+        if ((oppColorBoard & diagURPiece) != 0) {
+            // King is compromised on the upper right diagonal
 
             // Can be a pawn if diagULPiece == kingPos >> 9 (for white or black)
             if (diagURPiece == (tempBoards[colorIndex][5] >> 9)) {
@@ -780,7 +819,7 @@ public class Bitboard {
                 || (diagURPiece & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
         }
 
-        long diagLLPieces = diagLL & gameBoard;
+        long diagLLPieces = diagLL & tempGameBoard;
         if ((colorBoard & diagLLPieces) < (oppColorBoard & diagLLPieces)) {
             // King is exposed on the lower left diagonal.
 
@@ -792,7 +831,7 @@ public class Bitboard {
                 || (pieceOfThreat & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
         }
 
-        long diagLRPieces = diagLR & gameBoard;
+        long diagLRPieces = diagLR & tempGameBoard;
         if ((colorBoard & diagLRPieces) < (oppColorBoard & diagLRPieces)) {
             // King is exposed on the lower right diagonal.
 
@@ -838,11 +877,17 @@ public class Bitboard {
             return kingPos & kingMask;
         }
 
-        if (kingMask == 0 || kingPos == 0) throw new IllegalStateException("Invalid king mask");
+        if (kingPos == 0) {
+            throw new IllegalStateException("Invalid king mask");
+        }
 
         return getMSB(kingMask, kingPos >>> step, step);
     }
 
+
+    public boolean kingMissing() {
+        return tempBoards[0][5] == 0 || tempBoards[1][5] == 0;
+    }
 
     /**
      * <p>
@@ -885,12 +930,12 @@ public class Bitboard {
         long diagLL  = kingMask[15]; // mask LOWER LEFT
         long diagLR  = kingMask[16]; // mask LOWER RIGHT
 
-        long knights = kingMask[8]; // mask KNIGHT SQUARES
+        long knights = kingMask[17]; // mask KNIGHT SQUARES
 
         if (moveDirection == KingMoveDir.UP) {
 
-            kingMask[9]  = oldPos | kUp;
-            kingMask[10] = newPos ^ kDown;
+            kingMask[9]  = newPos ^ kUp;
+            kingMask[10] = oldPos | kDown;
 
             kingMask[11] = kLeft  << 8;
             kingMask[12] = kRight << 8;
@@ -906,8 +951,8 @@ public class Bitboard {
         }
         else if (moveDirection == KingMoveDir.DOWN) {
 
-            kingMask[9]  = newPos ^ kUp;
-            kingMask[10] = oldPos | kDown;
+            kingMask[9]  = oldPos | kUp;
+            kingMask[10] = newPos ^ kDown;
 
             kingMask[11] = kLeft  >>> 8;
             kingMask[12] = kRight >>> 8;
@@ -929,13 +974,13 @@ public class Bitboard {
             kingMask[11] = kLeft  ^ newPos;
             kingMask[12] = kRight | oldPos;
 
-            kingMask[13] = (diagUL >>> 1) ^ leftBoundXor;
+            kingMask[13] = (diagUL >>> 1) & ~leftBoundXor;
             kingMask[14] = (oldPos | diagUR) << 8;
 
-            kingMask[15] = (diagLL >>> 1) ^ leftBoundXor;
+            kingMask[15] = (diagLL >>> 1) & ~leftBoundXor;
             kingMask[16] = (oldPos | diagLR) >>> 8;
 
-            kingMask[17] = (knights >>> 1) ^ leftBoundXor;
+            kingMask[17] = (knights >>> 1) & ~leftBoundXor;
 
         }
         else if (moveDirection == KingMoveDir.RIGHT) {
@@ -947,12 +992,12 @@ public class Bitboard {
             kingMask[12] = kRight ^ newPos;
 
             kingMask[13] = (oldPos | diagUL) << 8;
-            kingMask[14] = (diagUR << 1) ^ rightBoundXor;
+            kingMask[14] = (diagUR << 1) & ~rightBoundXor;
 
             kingMask[15] = (oldPos | diagLL) >>> 8;
-            kingMask[16] = (diagLR << 1) ^ rightBoundXor;
+            kingMask[16] = (diagLR << 1) & ~rightBoundXor;
 
-            kingMask[17] = (knights << 8) ^ rightBoundXor;
+            kingMask[17] = (knights << 8) & ~rightBoundXor;
         }
         else if (moveDirection == KingMoveDir.UPPER_LEFT) {
 
@@ -965,12 +1010,12 @@ public class Bitboard {
             kingMask[13] = diagUL ^ newPos;
             kingMask[14] = (oldPos | diagUR) << 16;
 
-            kingMask[15] = ((oldPos | diagLL) >>> 2) ^ (leftBoundXor | (leftBoundXor >>> 1));
+            kingMask[15] = ((oldPos | diagLL) >>> 2) & ~(leftBoundXor | (leftBoundXor >>> 1));
             kingMask[16] = diagLR | oldPos;
 
-            kingMask[17] = (((knights << 7) | (oldPos >>> 3) | (oldPos >>> 10)) ^ (leftBoundXor | (leftBoundXor >>> 1)))
+            kingMask[17] = (((knights << 7) | (oldPos >>> 3) | (oldPos >>> 10)) & ~(leftBoundXor | (leftBoundXor >>> 1)))
                     | (oldPos << 24)  | (oldPos >>> 8)
-                    | (((oldPos << 1) | (oldPos << 17)) ^ rightBoundXor) ;
+                    | (((oldPos << 1) | (oldPos << 17)) & ~rightBoundXor) ;
 
         }
         else if (moveDirection == KingMoveDir.UPPER_RIGHT) {
@@ -985,11 +1030,11 @@ public class Bitboard {
             kingMask[14] = diagUR ^ newPos;
 
             kingMask[15] = diagLL | oldPos;
-            kingMask[16] = ((oldPos | diagLR) << 2) ^ (rightBoundXor | (rightBoundXor << 1));
+            kingMask[16] = ((oldPos | diagLR) << 2) & ~(rightBoundXor | (rightBoundXor << 1));
 
-            kingMask[17] = (((oldPos >>> 1) | (oldPos << 15)) ^ leftBoundXor)
+            kingMask[17] = (((oldPos >>> 1) | (oldPos << 15)) & ~leftBoundXor)
                     | (oldPos >>> 8) | (oldPos << 24)
-                    | (((oldPos << 3) | (knights << 9) | (oldPos >>> 6)) ^ (rightBoundXor | (rightBoundXor << 1)));
+                    | (((oldPos << 3) | (knights << 9) | (oldPos >>> 6)) & ~(rightBoundXor | (rightBoundXor << 1)));
 
         }
         else if (moveDirection == KingMoveDir.LOWER_LEFT) {
@@ -1000,15 +1045,15 @@ public class Bitboard {
             kingMask[11] = (kLeft >>> 8) ^ newPos;
             kingMask[12] = (kRight | oldPos) >>> 8;
 
-            kingMask[13] = ((oldPos | diagUL) >>> 2) ^ (leftBoundXor | (leftBoundXor >>> 1));
+            kingMask[13] = ((oldPos | diagUL) >>> 2) & ~(leftBoundXor | (leftBoundXor >>> 1));
             kingMask[14] = oldPos | diagUR;
 
             kingMask[15] = diagLL ^ newPos;
             kingMask[16] = (oldPos | diagLR) >>> 16;
 
-            kingMask[17] = (((knights >>> 9) | (oldPos >>> 3) | (oldPos << 6)) ^ (leftBoundXor | (leftBoundXor >>> 1)))
+            kingMask[17] = (((knights >>> 9) | (oldPos >>> 3) | (oldPos << 6)) & ~(leftBoundXor | (leftBoundXor >>> 1)))
                     | (oldPos >>> 24) | (oldPos << 8)
-                    | (((oldPos << 1) | (oldPos >>> 15)) ^ rightBoundXor);
+                    | (((oldPos << 1) | (oldPos >>> 15)) & ~rightBoundXor);
 
         }
         else {// moveDirection == KingMoveDir.LOWER_RIGHT
@@ -1019,15 +1064,15 @@ public class Bitboard {
             kingMask[11] = (kLeft | oldPos) >>> 8;
             kingMask[12] = (kRight >>> 8) ^ newPos;
 
-            kingMask[13] = ((oldPos | diagUR) << 2) ^ (rightBoundXor | (rightBoundXor << 1));
+            kingMask[13] = ((oldPos | diagUR) << 2) & ~(rightBoundXor | (rightBoundXor << 1));
             kingMask[14] = diagUL | oldPos;
 
-            kingMask[15] = diagLR ^ newPos;
-            kingMask[16] = (oldPos | diagLL) >>> 16;
+            kingMask[15] = (oldPos | diagLL) >>> 16;
+            kingMask[16] = diagLR ^ newPos;
 
-            kingMask[17] = (((oldPos >>> 1) | (oldPos >>> 17))  ^ leftBoundXor)
+            kingMask[17] = (((oldPos >>> 1) | (oldPos >>> 17))  & ~leftBoundXor)
                     | (oldPos << 8) | (oldPos >>> 24)
-                    | (((knights >>> 7) | (oldPos << 3) | (oldPos << 10)) ^ (rightBoundXor | rightBoundXor << 1));
+                    | (((knights >>> 7) | (oldPos << 3) | (oldPos << 10)) & ~(rightBoundXor | rightBoundXor << 1));
         }
 
         // Make sure to update these changes to the change history stack
@@ -1104,16 +1149,16 @@ public class Bitboard {
         for (int i = 0; i < 2; i++) {
             populate(pieces, i);
         }
-        prettyPrintPieces(pieces);
+        System.out.println(prettyPrintPieces(pieces));
     }
 
     private void populate(char[][] pieces, int colorIndex) {
-        populatePieces(pieces, boards[colorIndex][0],'p');
-        populatePieces(pieces, boards[colorIndex][1],'N');
-        populatePieces(pieces, boards[colorIndex][2],'B');
-        populatePieces(pieces, boards[colorIndex][3],'R');
-        populatePieces(pieces, boards[colorIndex][4],'Q');
-        populatePieces(pieces, boards[colorIndex][5],'K');
+        populatePieces(pieces, tempBoards[colorIndex][0],'p');
+        populatePieces(pieces, tempBoards[colorIndex][1],'N');
+        populatePieces(pieces, tempBoards[colorIndex][2],'B');
+        populatePieces(pieces, tempBoards[colorIndex][3],'R');
+        populatePieces(pieces, tempBoards[colorIndex][4],'Q');
+        populatePieces(pieces, tempBoards[colorIndex][5],'K');
     }
 
     public void printColorBoard(Piece.Color color) {
@@ -1122,44 +1167,46 @@ public class Bitboard {
 
         populate(pieces, colorIndex);
 
-        prettyPrintPieces(pieces);
+        System.out.println(prettyPrintPieces(pieces));
     }
 
     public void printMask(long mask) {
         char[][] pieces = buildDefaultPieces();
         populatePieces(pieces, mask, 'X');
 
-        prettyPrintPieces(pieces);
+        System.out.println(prettyPrintPieces(pieces));
     }
 
     public void printKingMasks(Piece.Color color) {
         int colorIndex = color.ordinal();
         char[][] pieces = buildDefaultPieces();
-        populatePieces(pieces, boards[colorIndex][5],'K');
-        populatePieces(pieces, boards[colorIndex][9],'#');
-        populatePieces(pieces, boards[colorIndex][10],'#');
-        populatePieces(pieces, boards[colorIndex][11],'#');
-        populatePieces(pieces, boards[colorIndex][12],'#');
-        populatePieces(pieces, boards[colorIndex][13],'#');
-        populatePieces(pieces, boards[colorIndex][14],'#');
-        populatePieces(pieces, boards[colorIndex][15],'#');
-        populatePieces(pieces, boards[colorIndex][16],'#');
-        populatePieces(pieces, boards[colorIndex][17],'N');
+        populatePieces(pieces, tempBoards[colorIndex][5],'K');
+        populatePieces(pieces, tempBoards[colorIndex][9],'#');
+        populatePieces(pieces, tempBoards[colorIndex][10],'#');
+        populatePieces(pieces, tempBoards[colorIndex][11],'#');
+        populatePieces(pieces, tempBoards[colorIndex][12],'#');
+        populatePieces(pieces, tempBoards[colorIndex][13],'#');
+        populatePieces(pieces, tempBoards[colorIndex][14],'#');
+        populatePieces(pieces, tempBoards[colorIndex][15],'#');
+        populatePieces(pieces, tempBoards[colorIndex][16],'#');
+        populatePieces(pieces, tempBoards[colorIndex][17],'*');
 
-        prettyPrintPieces(pieces);
+        System.out.println(prettyPrintPieces(pieces));
     }
 
-    private void prettyPrintPieces(char[][] p) {
-        System.out.println("   _______________________________");
+    private String prettyPrintPieces(char[][] p) {
+        StringBuilder printStr = new StringBuilder("   _______________________________\n");
         for (int i = 7; i >= 1; i--) {
-            System.out.printf("%d | %c | %c | %c | %c | %c | %c | %c | %c |%n", (i + 1), p[i][0], p[i][1], p[i][2],
-                    p[i][3], p[i][4], p[i][5], p[i][6], p[i][7]);
-            System.out.println("  |---|---|---|---|---|---|---|---|");
+            printStr.append(String.format("%d | %c | %c | %c | %c | %c | %c | %c | %c |%n", (i + 1), p[i][0], p[i][1], p[i][2],
+                    p[i][3], p[i][4], p[i][5], p[i][6], p[i][7]));
+            printStr.append("  |---|---|---|---|---|---|---|---|\n");
         }
-        System.out.printf("1 | %c | %c | %c | %c | %c | %c | %c | %c |%n", p[0][0], p[0][1], p[0][2], p[0][3], p[0][4],
-                p[0][5], p[0][6], p[0][7]);
-        System.out.println("   --- --- --- --- --- --- --- --- ");
-        System.out.println("    a   b   c   d   e   f   g   h");
+        printStr.append(String.format("1 | %c | %c | %c | %c | %c | %c | %c | %c |%n", p[0][0], p[0][1], p[0][2], p[0][3], p[0][4],
+                p[0][5], p[0][6], p[0][7]));
+        printStr.append("   --- --- --- --- --- --- --- --- \n");
+        printStr.append("    a   b   c   d   e   f   g   h\n");
+
+        return printStr.toString();
     }
 
     // Takes the mask, appends the icon to replace the default white space to indicate that a piece exists at that
@@ -1185,6 +1232,28 @@ public class Bitboard {
 
     }
 
+
+    public void printGameBoardBits() {
+        char[][] pieces = buildNonDefaultPieces('0');
+
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 8; j++) {
+                populatePieces(pieces, boards[i][j],'1');
+            }
+        }
+        prettyPrintPieces(pieces);
+        System.out.println("Game Board: " + GameEngine.hexString(gameBoard));
+    }
+
+    private char[][] buildNonDefaultPieces(char c) {
+        char[][] pieces = new char[8][];
+        for (int i = 0; i < 8; i++) {
+            pieces[i] = new char[]{c, c, c, c, c, c, c, c};
+        }
+
+        return pieces;
+    }
+
     // Builds up the pieces double char array for printing purposes. This action isn't efficient, nor intended as a
     // final implementation for physical use. Serves exclusively as a helpful visual for testing purposes.
     private char[][] buildDefaultPieces() {
@@ -1194,5 +1263,81 @@ public class Bitboard {
         }
 
         return pieces;
+    }
+
+    public void printAllGameBoards() {
+        System.out.println(this);
+    }
+
+    private String prettyPrintAllPieces(char[][] p, char[][] w, char[][] b) {
+        StringBuilder printStr = new StringBuilder("\n           GAME BOARD                 #             WHITE BOARD" +
+                "                 #             BLACK BOARD               \n");
+        printStr.append("   _______________________________    #      _______________________________    #      _____" +
+                "__________________________  \n");
+        for (int i = 7; i >= 1; i--) {
+            printStr.append(String.format("%d | %c | %c | %c | %c | %c | %c | %c | %c |", (i + 1), p[i][0], p[i][1],
+                    p[i][2], p[i][3], p[i][4], p[i][5], p[i][6], p[i][7]));
+            printStr.append(String.format("   #   %d | %c | %c | %c | %c | %c | %c | %c | %c |", (i + 1), w[i][0],
+                    w[i][1], w[i][2], w[i][3], w[i][4], w[i][5], w[i][6], w[i][7]));
+            printStr.append(String.format("   #   %d | %c | %c | %c | %c | %c | %c | %c | %c |%n", (i + 1), b[i][0],
+                    b[i][1], b[i][2], b[i][3], b[i][4], b[i][5], b[i][6], b[i][7]));
+            printStr.append("  |---|---|---|---|---|---|---|---|   #     |---|---|---|---|---|---|---|---|   #     |-" +
+                    "--|---|---|---|---|---|---|---|\n");
+        }
+
+        printStr.append(String.format("1 | %c | %c | %c | %c | %c | %c | %c | %c |", p[0][0], p[0][1], p[0][2], p[0][3],
+                p[0][4], p[0][5], p[0][6], p[0][7]));
+        printStr.append(String.format("   #   1 | %c | %c | %c | %c | %c | %c | %c | %c |", w[0][0], w[0][1], w[0][2],
+                w[0][3], w[0][4], w[0][5], w[0][6], w[0][7]));
+        printStr.append(String.format("   #   1 | %c | %c | %c | %c | %c | %c | %c | %c |%n", b[0][0], b[0][1], b[0][2],
+                b[0][3], b[0][4], b[0][5], b[0][6], b[0][7]));
+        printStr.append("   --- --- --- --- --- --- --- ---    #      --- --- --- --- --- --- --- ---    #      --- -" +
+                "-- --- --- --- --- --- ---  \n");
+        printStr.append("    a   b   c   d   e   f   g   h     #       a   b   c   d   e   f   g   h     #       a   " +
+                "b   c   d   e   f   g   h   \n");
+
+        return printStr.toString();
+    }
+
+    @Override
+    public String toString() {
+        char[][] pieces = buildDefaultPieces();
+        char[][] whitePieces = buildDefaultPieces();
+        char[][] blackPieces = buildDefaultPieces();
+
+        populate(pieces, 0);
+        populate(pieces, 1);
+        populate(whitePieces, 0);
+        populate(blackPieces, 1);
+
+
+        char[][] whiteMasks = buildDefaultPieces();
+        populatePieces(whiteMasks, tempBoards[0][5],'K');
+        populatePieces(whiteMasks, tempBoards[0][9],'#');
+        populatePieces(whiteMasks, tempBoards[0][10],'#');
+        populatePieces(whiteMasks, tempBoards[0][11],'#');
+        populatePieces(whiteMasks, tempBoards[0][12],'#');
+        populatePieces(whiteMasks, tempBoards[0][13],'#');
+        populatePieces(whiteMasks, tempBoards[0][14],'#');
+        populatePieces(whiteMasks, tempBoards[0][15],'#');
+        populatePieces(whiteMasks, tempBoards[0][16],'#');
+        populatePieces(whiteMasks, tempBoards[0][17],'*');
+
+        char[][] blackMasks = buildDefaultPieces();
+        populatePieces(blackMasks, tempBoards[1][5],'K');
+        populatePieces(blackMasks, tempBoards[1][9],'#');
+        populatePieces(blackMasks, tempBoards[1][10],'#');
+        populatePieces(blackMasks, tempBoards[1][11],'#');
+        populatePieces(blackMasks, tempBoards[1][12],'#');
+        populatePieces(blackMasks, tempBoards[1][13],'#');
+        populatePieces(blackMasks, tempBoards[1][14],'#');
+        populatePieces(blackMasks, tempBoards[1][15],'#');
+        populatePieces(blackMasks, tempBoards[1][16],'#');
+        populatePieces(blackMasks, tempBoards[1][17],'*');
+
+        String masks = "\n------------ WHITE KING MASKS ----------------\n" + prettyPrintPieces(whiteMasks) +
+                       "\n------------ BLACK KING MASKS ----------------\n" + prettyPrintPieces(blackMasks);
+
+        return prettyPrintAllPieces(pieces, whitePieces, blackPieces) + masks;
     }
 }

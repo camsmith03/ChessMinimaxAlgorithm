@@ -6,33 +6,62 @@ import java.util.ArrayList;
  * legality is maintained.
  */
 public class Board {
-    private Bitboard gameBoard;
+    private Bitboard board;
     private Piece.Color turnToMove;
     private MoveGenerator moveGenerator;
 
     public Board() {
-        gameBoard = new Bitboard();
+        board = new Bitboard();
         moveGenerator = new MoveGenerator();
         turnToMove = Piece.Color.WHITE;
     }
 
     public Bitboard getBitboard() {
-        return gameBoard;
+        return board;
     }
 
 
     public void cleanBoard() {
-        gameBoard = new Bitboard();
+        board = new Bitboard();
         moveGenerator = new MoveGenerator();
         turnToMove = Piece.Color.WHITE;
     }
 
     public void move(Move movedPiece) throws IllegalArgumentException {
-        gameBoard.movePiece(movedPiece);
+        board.movePiece(movedPiece);
         changeTurn();
     }
 
-    private void changeTurn() {
+    public void applyVirtualMove() {
+        board.applyVirtualMovePermanently();
+        changeTurn();
+    }
+
+    public SaveState saveGameState() {
+        return board.saveCurrentState();
+    }
+
+    public void restoreGameState(SaveState saveState, Piece.Color turnToMove) {
+        this.turnToMove = turnToMove;
+        board.restoreSaveState(saveState);
+    }
+
+    public void applyMinimaxMove(Move tempMove) throws IllegalArgumentException, RuntimeException {
+        try {
+            board.virtualMovePiece(tempMove);
+            if (board.kingMissing()) {
+                throw new RuntimeException(); // game is over (one of the kings is no longer there)
+            }
+        } catch (IllegalArgumentException e) {
+            board.wipeVirtualization();
+            throw e;
+        }
+        board.applyVirtualMovePermanently();
+
+        changeTurn();
+    }
+
+    protected void changeTurn() {
         if (turnToMove == Piece.Color.WHITE) {
             turnToMove = Piece.Color.BLACK;
         }
@@ -46,10 +75,10 @@ public class Board {
     }
 
     public MoveList getLegalMoves() {
-        return moveGenerator.generateMoves(gameBoard, turnToMove);
+        return moveGenerator.generateMoves(board, turnToMove);
     }
 
     public Piece getPiece(long position) {
-        return gameBoard.getPiece(position);
+        return board.getPiece(position);
     }
 }

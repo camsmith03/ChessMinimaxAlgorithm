@@ -187,6 +187,9 @@ public class InputAnalyzer {
         }
 
         long possibleFromLoc = maskGenerator(toMask, colorBoard, pieceBoard, type);
+        if (possibleFromLoc == 0) {
+            throw new IllegalStateException("Invalid move (piece not able to be moved to the specified destination square)");
+        }
 
         long[] sourceRef;
         if (sourceIsFile) {
@@ -253,6 +256,9 @@ public class InputAnalyzer {
      */
     public Move analyzeNBRQ(Piece.Color color, Piece.Type type, boolean capturedPiece, int destFile, int destRank,
                            int sourceFile, int sourceRank) throws IllegalStateException {
+        if (sourceFile == destFile && sourceRank == destRank) {
+            throw new IllegalStateException("Invalid move (piece cannot be moved to the same square)");
+        }
         long toMask = getMask(destFile, destRank);
         long pieceBoard = board.getColorBoards(color)[type.ordinal()];
         long oppBoard; long colorBoard;
@@ -266,11 +272,13 @@ public class InputAnalyzer {
             oppBoard = board.getBoardColor(Piece.Color.WHITE);
         }
 
+
         if ((colorBoard & toMask) != 0) {
             throw new IllegalStateException("Invalid move (piece of same color already in destination square)");
         }
+        long masks = maskGenerator(toMask, colorBoard, pieceBoard, type);
 
-        long fromMask = pieceBoard & files[sourceFile] & ranks[sourceRank]; // should be exactly on the given piece
+        long fromMask = masks & (files[sourceFile] & ranks[sourceRank]); // should be exactly on the given piece
 
         if (fromMask == 0) {
             throw new IllegalStateException("Invalid move (piece double ambiguity not finding source piece location)");
@@ -303,7 +311,7 @@ public class InputAnalyzer {
     public Move analyzePawn(Piece.Color color, int destFile, int destRank) {
         long pawnTo = getMask(destFile, destRank);
         long pawnFrom;
-        Piece pawn;
+//        Piece pawn;
 
         if (color == Piece.Color.WHITE) {
             if ((pawnTo & 0x00000000FF000000L) != 0) {
@@ -314,14 +322,14 @@ public class InputAnalyzer {
                     if (pawn2 == null) {
                         throw new IllegalStateException("White pawn move is not legal");
                     }
-                    pawn = pawn2;
+//                    pawn = pawn2;
                     pawnFrom = pawnTo >>> 16;
                 } else {
-                    pawn = pawn1;
+//                    pawn = pawn1;
                     pawnFrom = pawnTo >>> 8;
                 }
             } else {
-                pawn = board.getPiece(pawnTo >>> 8);
+                Piece pawn = board.getPiece(pawnTo >>> 8);
                 pawnFrom = pawnTo >>> 8;
                 if (pawn == null) {
                     throw new IllegalStateException("White pawn move is not legal");
@@ -337,14 +345,14 @@ public class InputAnalyzer {
                     if (pawn2 == null) {
                         throw new IllegalStateException("Black pawn move is not legal");
                     }
-                    pawn = pawn2;
+//                    pawn = pawn2;
                     pawnFrom = pawnTo << 16;
                 } else {
-                    pawn = pawn1;
+//                    pawn = pawn1;
                     pawnFrom = pawnTo << 8;
                 }
             } else {
-                pawn = board.getPiece(pawnTo << 8);
+                Piece pawn = board.getPiece(pawnTo << 8);
                 pawnFrom = pawnTo << 8;
                 if (pawn == null) {
                     throw new IllegalStateException("Black pawn move is not legal");
@@ -389,10 +397,6 @@ public class InputAnalyzer {
         ensureLegal(move);
 
         return move;
-    }
-
-    public Move analyzePromotedPawn(String input, Piece.Color color, boolean pieceCaptured, char promotedPiece) {
-        return null;
     }
 
     public Move analyzePawnEnPassant(String input, Piece.Color color) {
@@ -450,8 +454,13 @@ public class InputAnalyzer {
     }
 
 
+    public Move analyzePromotedPawn(String input, Piece.Color color, boolean pieceCaptured, char promotedPiece) {
+
+        throw new IllegalStateException("UNSUPPORTED MOVE");
+    }
+
     public Move analyzeCastle(boolean kingSideCastle, Piece.Color color) {
-        return null;
+        throw new IllegalArgumentException("UNSUPPORTED MOVE");
     }
 
     private long maskGenerator(long dest, long colorBoard, long pieceBoard, Piece.Type type) {
@@ -466,13 +475,13 @@ public class InputAnalyzer {
                                              | (((dest << 15) | (dest >>> 17)) & ~fileH)
                                              | (((dest <<  6) | (dest >>> 10)) & ~fileG & ~fileH));
         } else if (type == Piece.Type.BISHOP) {
-            return bishopMask(dest, colorBoard) & pieceBoard;
+            return bishopMask(dest) & pieceBoard;
 
         } else if (type == Piece.Type.ROOK) {
             return rookMask(dest, colorBoard) & pieceBoard;
 
         } else if (type == Piece.Type.QUEEN) {
-            return (bishopMask(dest, colorBoard) | rookMask(dest, colorBoard)) & pieceBoard;
+            return (bishopMask(dest) | rookMask(dest, colorBoard)) & pieceBoard;
 
         } else if (type == Piece.Type.KING) {
             long kingMask = (dest >>> 8) | (dest << 8);
@@ -491,47 +500,48 @@ public class InputAnalyzer {
         throw new IllegalArgumentException("Piece type is NONE");
     }
 
-    private long bishopMask(long dest, long pieceBoard) {
+    private long bishopMask(long dest) {
+        long gameBoard = board.getGameBoard();
         long fileA = 0x0101010101010101L;
         long fileH = 0x8080808080808080L;
         long bishopMask = 0;
         long bishopLeft = dest >>> 1;
         long upperLeft = bishopLeft << 8;
         long lowerLeft = bishopLeft >>> 8;
-        while((bishopLeft & fileH) == 0) {
-            if ((upperLeft & pieceBoard) == 0) {
+        while((bishopLeft & fileH) == 0 && bishopLeft != 0) {
+            if ((upperLeft & gameBoard) == 0) {
                 // stop iteration once the first occurrence is recorded
                 upperLeft = upperLeft << 7;
             }
-            if ((lowerLeft & pieceBoard) == 0) {
+            if ((lowerLeft & gameBoard) == 0) {
                 lowerLeft = lowerLeft >>> 9;
             }
             bishopLeft >>>= 1;
         }
-        if ((upperLeft & pieceBoard) != 0) {
+        if ((upperLeft & gameBoard) != 0 && (upperLeft & fileH) == 0) {
             bishopMask |= upperLeft;
         }
-        if ((lowerLeft & pieceBoard) != 0) {
+        if ((lowerLeft & gameBoard) != 0 && (lowerLeft & fileH) == 0) {
             bishopMask |= lowerLeft;
         }
 
         long bishopRight = dest << 1;
         long upperRight = bishopRight << 8;
         long lowerRight = bishopRight >>> 8;
-        while ((bishopRight & fileA) == 0) {
-            if ((upperRight & pieceBoard) == 0) {
+        while ((bishopRight & fileA) == 0 && bishopRight != 0) {
+            if ((upperRight & gameBoard) == 0) {
                 // stop iteration once first occurrence is recorded.
                 upperRight = upperRight << 9;
             }
-            if ((lowerRight & pieceBoard) == 0) {
+            if ((lowerRight & gameBoard) == 0) {
                 lowerRight = lowerRight >>> 7;
             }
             bishopRight <<= 1;
         }
-        if ((upperRight & pieceBoard) != 0) {
+        if ((upperRight & gameBoard) != 0 && (upperRight & fileA) == 0) {
             bishopMask |= upperRight;
         }
-        if ((lowerRight & pieceBoard) != 0) {
+        if ((lowerRight & gameBoard) != 0 && (lowerRight & fileA) == 0) {
             bishopMask |= lowerRight;
         }
 
@@ -539,12 +549,13 @@ public class InputAnalyzer {
     }
 
     private long rookMask(long dest, long colorBoard) {
+//        long gameBoard = board.getVirtualGameBoard();
         long fileA = 0x0101010101010101L;
         long fileH = 0x8080808080808080L;
 
         long rookMask = 0;
         long rookLeft = dest >>> 1;
-        while((rookLeft & fileH) == 0) {
+        while((rookLeft & fileH) == 0 && rookLeft != 0) {
             if ((rookLeft & colorBoard) != 0) {
                 // obtain the first rook along the given rank
                 rookMask |= rookLeft;
@@ -554,7 +565,7 @@ public class InputAnalyzer {
             }
         }
         long rookRight = dest << 1;
-        while ((rookRight & fileA) == 0) {
+        while ((rookRight & fileA) == 0 && rookRight != 0) {
             if ((rookRight & colorBoard) != 0) {
                 // obtain the first rook along the given rank to the left
                 rookMask |= rookRight;
@@ -623,9 +634,6 @@ public class InputAnalyzer {
             throw new IllegalStateException("Invalid move (the move attempts to place it's own king in a checked position).");
         }
     }
-
-
-
 }
 
 //private Move knightMoveAnalysis(String input, Piece.Color color, boolean pieceCaptured) {

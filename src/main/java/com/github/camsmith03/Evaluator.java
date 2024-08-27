@@ -62,6 +62,162 @@ public class Evaluator {
             This is a tough one
 
      */
+    private final Piece.Color maximizer;
+    private final Piece.Color minimizer;
+    private final Piece.Color finalMoveColor;
+    private final boolean playerMove;
+    private boolean awardCentral = true; // flip to false after 10+ moves are made (15+ post move board gets evaluated)
+    private int evalMultiplier = 1;
+    private final Bitboard board;
+    private static final int[] PIECE_VAL = new int[]{1, 3, 3, 5, 9}; // official piece values.
+    private static final long centralSquares = 0x0000001818000000L; // center four squares
+    private static final long outerRing = 0x00003C24243C0000L; // ring surrounding center 4 squares
 
+
+    public Evaluator(Bitboard board, Piece.Color maximizer, int treeDepth) {
+
+        this.maximizer = maximizer;
+        if (maximizer == Piece.Color.BLACK) {
+            this.minimizer = Piece.Color.WHITE;
+            evalMultiplier = -1; // evaluate(Move) defaults to assume black is the minimizer.
+                                 // multiplying by negative 1 will reverse the output.
+        }
+        else
+            this.minimizer = Piece.Color.BLACK;
+
+        this.board = board;
+        if (treeDepth % 2 == 0) {
+            finalMoveColor = minimizer;
+            playerMove = finalMoveColor == Piece.Color.WHITE;
+        }
+        else {
+            finalMoveColor = maximizer;
+            playerMove = finalMoveColor == Piece.Color.BLACK;
+        }
+
+    }
+
+    // assumes that a try/catch was already made on the move to ensure its legality, and that the move has been applied
+    // to the virtual boards.
+    // Will also base calculations such that white -> maximizer, black -> minimizer. A multiplier initialized in the
+    // constructor will invert the output assuming the player is actually black.
+    public int evaluate(Move move) {
+        long[][] boards = board.getVirtualBoards();
+        long[] colorBoards = board.getVirtualColorBoards();
+
+        int evaluation = materialEval(boards) + developmentEval(boards, colorBoards) + safetyEval(boards);
+
+//        if (move.getPromotedType() != Piece.Type.NONE) {
+//            // TODO: Come back and rethink promotion rewards. Promotion may be an intermittent move that was made. This
+//            //       goes against static definition of static evaluation.
+//            if (playerMove)
+//                evaluation += 50; // encourage player promotion
+//            else
+//                evaluation -= 50; // discourage opponent promotion
+//        }
+//        else if (move.getCastledRook() != Move.CastleSide.NONE) {
+//            if (playerMove) {
+//                evaluation += 50;
+//            }
+//        }
+
+        return evaluation * evalMultiplier;
+    }
+
+
+
+    /**
+     * Evaluates who has the material advantage for the current board. Returns an integer assuming that black is the
+     * minimizer (can multiply by negative 1 to invert it if not).
+     * <br>
+     * Considerations:
+     *  -> High value of Queen
+     *  -> Pair of two bishops on the board
+     *  -> General piece value
+     *
+     * @return
+     */
+    private int materialEval(long[][] boards) {
+        int blackMaterial = 0;
+        int whiteMaterial = 0;
+
+        // Baseline values
+        for (int i = 0; i < 5; i++) {
+            long whitePieces = boards[0][i];
+            while (whitePieces != 0) {
+                whiteMaterial += PIECE_VAL[i];
+                whitePieces = whitePieces ^ (whitePieces & -whitePieces);
+            }
+            long blackPieces = boards[1][i];
+            while (blackPieces != 0) {
+                blackMaterial += PIECE_VAL[i];
+                blackPieces = blackPieces ^ (blackPieces & -blackPieces);
+            }
+        }
+
+        // Bishop pairs (bonus points)
+        long whiteBishops = boards[0][2];
+        if ((whiteBishops ^ (whiteBishops & -whiteBishops)) != 0) {
+            whiteMaterial += 2;
+        }
+        long blackBishops = boards[1][2];
+        if ((blackBishops ^ (blackBishops & -blackBishops)) != 0) {
+            blackMaterial += 2;
+        }
+
+        return whiteMaterial - blackMaterial; // positive result means white advantage, negative result means black
+                                              // advantage.
+    }
+
+    private int developmentEval(long[][] boards, long[] colorBoards) {
+        // Pawn structure, Piece placement, Open Files and Diagonals, Piece mobility
+        int whiteDevelopment = 0;
+        int blackDevelopment = 0;
+
+        if (awardCentral) {
+            long whitePiecesInner = colorBoards[0] & centralSquares;
+            long blackPiecesInner = colorBoards[1] & centralSquares;
+
+            while (whitePiecesInner != 0) {
+                whiteDevelopment += 2;
+                whitePiecesInner = whitePiecesInner ^ (whitePiecesInner & -whitePiecesInner);
+            }
+            while (blackPiecesInner != 0) {
+                blackDevelopment += 2;
+                blackPiecesInner = blackPiecesInner ^ (blackPiecesInner & -blackPiecesInner);
+            }
+
+            long whitePiecesOuter = colorBoards[0] & outerRing;
+            long blackPiecesOuter = colorBoards[1] & outerRing;
+
+            while (whitePiecesOuter != 0) {
+                whiteDevelopment += 1;
+                whitePiecesOuter = whitePiecesOuter ^ (whitePiecesOuter & -whitePiecesOuter);
+            }
+
+            while (blackPiecesOuter != 0) {
+                blackDevelopment += 1;
+                blackPiecesOuter = blackPiecesOuter ^ (blackPiecesOuter & -blackPiecesOuter);
+            }
+        }
+        return whiteDevelopment - blackDevelopment;
+    }
+
+    private int safetyEval(long[][] boards) {
+        return 0;
+    }
+
+    /**
+     * After 20+ moves have been made, the number of moves that will be applied to the board will mean the mid-game is
+     * approaching its conclusion and end game prep should be made. Awarding central square bonuses is trivial since the
+     * stability of the central squares is not as big a concern.
+     * <br>
+     * This is left to be utilized by Minimax to allow multiple configurations to be attempted and see which one leads
+     * to a preferable outcome.
+     *
+     */
+    public void stopCentralBonus() {
+        awardCentral = false;
+    }
 
 }
