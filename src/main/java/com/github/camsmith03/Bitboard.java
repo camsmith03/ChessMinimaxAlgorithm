@@ -2,15 +2,30 @@ package com.github.camsmith03;
 
 /**
  * <p>
- * Bitboard implemented using longs that represent a 64 square chess board (1 for occupied, 0 for empty). Highly more
- * efficient than other approaches as far less space is consumed by the game board.
+ * Bitboard implemented using longs that represent a 64 square chess
+ * board (1 for occupied, 0 for empty). Highly more efficient than other 
+ * approaches as far less space is consumed by the game board. This also adds an
+ * additional feature of move virtualization, which will allow paths to the
+ * traversed, then returned back to the start without the need to worry about
+ * loosing the previous state. As of now, it allows for single path traversal,
+ * however, plans are made to reimplement the SaveState class as a circular
+ * based stack with the size of ply. This would remove the need for hard copies
+ * to be made, allowing the algorithm to truly leverage the power bitboards have
+ * to offer over conventional implementations.
+ * </p>
+ * <p>
+ * All the methods and implementations were created by myself. Any constants
+ * (including starting masks and mask manipulations) were painstakingly found
+ * using hand computations on my iPad notes app. While these are likely freely
+ * available, the manual derivation helped to significantly improve my hex and
+ * binary conversion skills, as well as my general understanding as to how the
+ * boards work.
  * </p>
  * <p>
  * Follows standard Bitboard conventions:
- * <ul><li>LSB: Square a1 => (0, 0)</li><li>MSB: Square h8 => (7, 7) </li></ul>
- * </p>
- * <p>
- * Stuff to talk about here.
+ * <ul><li>LSB: Square a1</li>
+ *     <li>MSB: Square h8</li>
+ * </ul>
  * </p>
  *
  * @author Cameron Smith
@@ -21,8 +36,9 @@ public class Bitboard {
     private static final long alternatingByteMask = 0xFF00FF00FF00FF00L;
 
     /*  WHITE INITIAL KING MASK CONSTANTS
-           These bits are the precomputed masks that serve primarily as reference and allow for future modifications if
-           need be. They are based on the direction for the squares surrounding the king.
+    These bits are the precomputed masks that serve primarily as reference and
+    allow for future modifications if need be. They are based on the direction
+    for the squares surrounding the white king.
     */
     private static final long whiteKingUpMask     = 0x1010101010101000L;
     private static final long whiteKingDownMask   = 0;
@@ -50,40 +66,83 @@ public class Bitboard {
 
     private enum KingMoveDir { UP, DOWN, LEFT, RIGHT, UPPER_LEFT, UPPER_RIGHT, LOWER_LEFT, LOWER_RIGHT }
 
-    public long enPassantBoard = 0;
+    public long enPassantBoard = 0; // Flag that stays zero unless a move from either side could allow for an ep capture
+                                    // Its value is un-flipped after the next turn (in line with ep rules).
 
 
     // Board backing storage fields
-    private long[][] boards = new long[2][];
+    private final long[][] boards = new long[2][];
     private long gameBoard;
     private long whiteBoard;
     private long blackBoard;
-    private long[] tempColorBoards;
 
-    // Storage allocated to undo moves that lead to positions that place the king in check
+    // Storage allocated to undo any moves that lead to positions that place the king in check
     private final long[][] tempBoards = new long[2][]; // Copy of boards to allow for virtual nondestructive, movements.
-    private int[] changeHist = new int[30]; // Acts as an array of 15 pairs of integers (int colorIndex, int maskIndex)
+    private final long[] tempColorBoards;
+    private int[] changeHist = new int[30]; // Acts as an array of 15 pairs of integers (int modifiedColorIndex, int
+                                            // modifiedMaskIndex).
     private int changeHistSize; // essentially the stack pointer to modified boards
 
 
-    // Move virtualization flag
-    private boolean virtualState = false; // used to apply virtual moves to the board to test move legality without
-                                           // write back to the boards array.
+    /* === MOVE VIRTUALIZATION FLAGS === */
 
-    private boolean virtualCall = false; // flag is flipped to true when virtualMove() is invoked, allowing the
-                                                // subsequent call to movePiece() to maintain current state. Otherwise,
-                                                // it's assumed movePiece() call has intent to modify saved state.
+    /*
+    the virtualState flag is used to apply virtual moves to the board to test
+    move legality without write back to the boards array.
+     */
+    private boolean virtualState = false; //
 
-    private boolean virtualLock = false; // flag is used to allow the user to keep their instance of virtualization in
-                                         // the event they hit an illegal position. While they can't revert back, they
-                                         // may want access to data prior to wiping the instance.
+    /*
+    the virtualCall flag is flipped to true when virtualMove() is invoked,
+    allowing the subsequent call to movePiece() to maintain current state.
+    Otherwise, it's assumed movePiece() call has intent to modify saved state.
+     */
+    private boolean virtualCall = false; //
 
+    /*
+    the virtualLock lock is used to allow the user to keep their instance of
+    virtualization in the event they hit an illegal position. While they can't
+    revert back, they may want access to data prior to wiping the instance.
+     */
+    private boolean virtualLock = false;
 
-
+    /**
+     * Bitboard's constructor will set the default values for each of its
+     * fields, assuming the expected default is a normal starting chess game.
+     * <br>
+     * The "boards" long array acts as the mask storage that will hold all the
+     * masks corresponding to the current game. These mask values have been
+     * precomputed by myself to speed up needless bit operations. There are two
+     * boards, and the color being stored depends on the color's ordinal value
+     * as the starting index.
+     *     > Ex: boards[ordinalColorIndex][maskIndex]
+     *     // ordinalColorIndex=0 -> white, =1 -> black
+     * <p>
+     * The PIECE TYPE MASKS:     These correspond to indices of the ordinal
+     *                           values for the piece types. usage must adhere
+     *                           to the fact that Piece.Type.NONE exists and has
+     *                           an ordinal value of 6.
+     * </p><p>
+     * The CASTLING ROOKS MASKS: This holds the mask that is defaulted to the
+     *                           location of the two rooks. When a side looses
+     *                           its ability to castle (on either king side or
+     *                           queen side) the rook used during the move has
+     *                           its bit set to zero. This would occur if either
+     *                           rook was moved. Also, if the king is moved at
+     *                           any point, this is set to zero to indicate that
+     *                           castling is no longer available.
+     * </p><p>
+     * The KING CHECK MASKS:     These are the masking bits corresponding to the
+     *                           squares that *could* pose a threat to the king.
+     *                           They are essential in ensuring no moves were
+     *                           attempted that would put the moved piece's king
+     *                           in check. They are changed only when the king
+     *                           is moved for either side.
+     * </p>
+     *
+     */
     public Bitboard() {
-        /* ========================================================== */
-        /* ==================  WHITE MASKING BITS  ================== */
-        /* ===========================================================*/
+        // Initial white board masking bits
         boards[0] = new long[]{
                 // #########    PIECE TYPE MASKS      #########
                 0x000000000000FF00L, // White Pawns
@@ -112,9 +171,7 @@ public class Bitboard {
                 whiteKingKnightMask  // kKnightPos Mask
         };
 
-        /* ========================================================== */
-        /* ==================  BLACK MASKING BITS  ================== */
-        /* ===========================================================*/
+        // Initial black board masking bits
         boards[1] = new long[]{
                 // #########    PIECE TYPE MASKS      #########
                 0x00FF000000000000L, // Black Pawns
@@ -237,39 +294,31 @@ public class Bitboard {
         enPassantBoard = 0; // reset enPassantBoard back to default
 
 
-        if (move.getCastledRook() != Move.CastleSide.NONE) {
+        if (move.getCastledRook() != Move.CastleSide.NONE)
             castlePiece(move);
-        }
         else {
             tempColorBoards[colorIndex] ^= to | from;
-
             int capture = move.getCapturedPieceType().ordinal();
 
             if (capture != 6 && enPassantBit == 0) {
                 tempBoards[1 - colorIndex][capture] ^= to; // update temp board to removed captured piece
                 tempColorBoards[1 - colorIndex] ^= to;
 
-
                 // Append the temp board change to the history table, allowing a backtrack mechanism to undo said change
                 appendChange(1 - colorIndex, capture);
             }
 
             if (move.getMovedPieceType() == Piece.Type.PAWN) {
-                if (move.getPromotedType() != Piece.Type.NONE) {
-                    // if pawn was promoted
+                if (move.getPromotedType() != Piece.Type.NONE) // if pawn was promoted
                     updatePawnPromotion(move);
-                }
                 else if (enPassantBit != 0) {
                     // an en passant capture is made. update with the saved location of the captured pawn
                     tempBoards[1 - colorIndex][0] ^= enPassantBit;
                     tempColorBoards[1 - colorIndex] ^= enPassantBit;
-
                     appendChange(1 - colorIndex, 0);
                 }
-                else {
-                    // otherwise, check if pawn move changed possible en passant captures
+                else // otherwise, check if pawn move changed possible en passant captures
                     checkEnPassantBoard(colorIndex, from, to);
-                }
             }
             else if (move.getMovedPieceType() == Piece.Type.KING) {
                 // indicate that the king loses its castling privileges once it moves past its starting position.
@@ -284,15 +333,9 @@ public class Bitboard {
             else if (move.getMovedPieceType() == Piece.Type.ROOK && tempBoards[colorIndex][6] != 0) {
                 // Indicate that a rook looses its castling privileges once it moves past its starting position.
                 tempBoards[colorIndex][6] ^= from;
-
-
                 // add change to the history stack
                 appendChange(colorIndex, 6);
             }
-
-
-
-
 
             // Append the original move to the tempBoard
             tempBoards[colorIndex][boardIndex] ^= from | to;
@@ -315,22 +358,21 @@ public class Bitboard {
             throw new IllegalArgumentException("Attempted move illegally placed the king in check (reverted back).");
         }
 
-        // if the move is legal, apply the final changes from tempBoards to boards only if the skipWriteBack flag is set
+        // if the move is legal, apply the final changes from tempBoards to boards only if the virtualState flag is set
         // to false. This allows for move virtualization that can be used to apply temporary moves without affecting
         // the core boards themselves.
-        if (!virtualState) {
+        if (!virtualState)
             applyChanges();
-        }
-        else {
-            // if we are in a virtual state, update our gameBoard so any calls to getPiece use the virtual state boards
+        else // if we are in a virtual state, update our gameBoard so any calls to getPiece use the virtual state boards
             gameBoard = tempColorBoards[colorIndex] | tempColorBoards[1 - colorIndex];
-        }
+
     }
 
     /**
-     * Appends changes to the changeHist array. Will increase it's size if the limit has been reached. Since the value
-     * of changeHist is a multiple of two, and every change added requires two inputs, size limits only need to be
-     * checked once per insertion.
+     * Appends changes to the changeHist array. Will increase it's size if the
+     * limit has been reached. Since the value of changeHist is a multiple of
+     * two, and every change added requires two inputs, size limits only need to
+     * be checked once per insertion.
      *
      * @param colorIndex
      *      Index of the color board changed
@@ -345,8 +387,10 @@ public class Bitboard {
     }
 
     /**
-     * Grow the size of the changeHist array. Unless virtualization explores deep into future moves, the storage size is
-     * unlikely to require growth. Nonetheless, if the limit is reached, the size of the array will be doubled.
+     * Grow the size of the changeHist array. Unless virtualization explores
+     * deep into future moves, the storage size is unlikely to require growth.
+     * Nonetheless, if the limit is reached, the size of the array will be
+     * doubled.
      */
     private void growChangeHist() {
         int[] newChangeHist = new int[changeHistSize * 2];
@@ -354,14 +398,15 @@ public class Bitboard {
         changeHist = newChangeHist;
     }
 
-
     /**
-     * This will revert the "tempBoards" back to the state that matches "boards" using only the changes referenced by
-     * the change history stack "changeHist". This helps to reduce cost by only copying back modified elements, instead
-     * of the entire array.
+     * This will revert the "tempBoards" back to the state that matches "boards"
+     * using only the changes referenced by the change history stack
+     * "changeHist". This helps to reduce cost by only copying back modified
+     * elements, instead of the entire array.
      * <br><br>
-     * In addition, we don't actually need to remove these elements from changeHist, since the stack structure
-     * facilitates self-management of its elements.
+     * In addition, we don't actually need to remove these elements from
+     * changeHist, since the stack structure facilitates self-management of its
+     * elements.
      */
     private void discardChanges() {
         while (changeHistSize > 0) {
@@ -374,8 +419,10 @@ public class Bitboard {
     }
 
     /**
-     * This is the inverse of undoChanges, applying changes to "boards" instead of "tempBoards". It also will
-     * append changes to "gameBoard" which holds the board corresponding to every currently occupied piece in the game.
+     * This is the inverse of undoChanges, applying changes to "boards" instead
+     * of "tempBoards". It also will append changes to "gameBoard" which holds
+     * the board corresponding to every currently occupied piece in
+     * the game.
      */
     private void applyChanges() {
         while (changeHistSize > 0) {
@@ -390,28 +437,34 @@ public class Bitboard {
 
     /**
      * <p>
-     * Virtual move offers the powerful ability to modify the bitboard, yet maintain the state of boards to fall back
-     * on after the move was made. Modifications are written to tempBoards, with changeHist updates, but nothing gets
-     * written permanently.
+     * Virtual move offers the powerful ability to modify the bitboard, yet
+     * maintain the state of boards to fall back on after the move was made.
+     * Modifications are written to tempBoards, with changeHist updates, but
+     * nothing gets written permanently.
      * </p><p>
      * Utilizes a set two flags and one lock.
      * <ul>
-     * <li><b>virtualState</b> is flipped to true on the first time the virtual instance is used to indicate the current
-     * board is in a virtual usage state. It will only get flipped back once the instance has ended.</li>
+     * <li><b>virtualState</b> is flipped to true on the first time the virtual
+     * instance is used to indicate the current board is in a virtual usage
+     * state. It will only get flipped back once the instance has ended.</li>
      *
-     * <li><b>virtualCall</b> gets flipped once every time virtualMovePiece() is called. This grants communication
-     * between movePiece() and virtualMovePiece(), allowing the former to know not to wipe the virtual instance if it
-     * was properly invoked with the flag being set to true. The flag is set to false immediately afterward for the next
-     * invocation.</li>
+     * <li><b>virtualCall</b> gets flipped once every time virtualMovePiece() is
+     * called. This grants communication between movePiece() and
+     * virtualMovePiece(), allowing the former to know not to wipe the virtual
+     * instance if it was properly invoked with the flag being set to true. The
+     * flag is set to false immediately afterward for the next invocation.</li>
      *
-     * <li><b>virtualLock</b> is a one-way flag that indicates a illegal board state has been reached on a given virtual
-     * instance, and no further moves can be made. This pauses any write back procedures to allow data to be collected
-     * that is relevant to the state it's in. In order to make changes again, the state needs to be wiped by either
-     * invoking movePiece() for a permanent move on the original board, or calling the wipeVirtualization() method.</li>
-     * </ul>
+     * <li><b>virtualLock</b> is a one-way flag that indicates a illegal board
+     * state has been reached on a given virtual instance, and no further moves
+     * can be made. This pauses any write back procedures to allow data to be
+     * collected that is relevant to the state it's in. In order to make changes
+     * again, the state needs to be wiped by either invoking movePiece() for a
+     * permanent move on the original board, or calling the
+     * wipeVirtualization() method.</li></ul>
      * </p><p>
-     * Note: if a state is currently being used for virtualization, any attempts to invoke movePiece() instead of
-     * virtualMovePiece() will always wipe the virtualized instance and apply the move to the original board
+     * Note: if a state is currently being used for virtualization, any attempts
+     * to invoke movePiece() instead of virtualMovePiece() will always wipe the
+     * virtualized instance and apply the move to the original board
      * permanently.
      * </p>
      */
@@ -427,18 +480,19 @@ public class Bitboard {
     }
 
     /**
-     * Applies a virtual move to the board, checks for legality, and returns a boolean to indicate true if the move was
-     * successful and did not put the king in check. By default, this will not delete the virtual instance in case the
-     * caller wants to maintain it, assuming the instance is legal.
+     * Applies a virtual move to the board, checks for legality, and returns a
+     * boolean to indicate true if the move was successful and did not put the
+     * king in check. By default, this will not delete the virtual instance in
+     * case the caller wants to maintain it, assuming the instance is legal.
      *
      * @param move
      *      Move to test on the board for check legality.
      * @return true if the move didn't put the king in check; false otherwise.
      */
     public boolean isMoveLegal(Move move) {
-        if (virtualLock || virtualState) {
+        if (virtualLock || virtualState)
             wipeVirtualization(); // wipe the previous virtual instance if one exists
-        }
+
         virtualState = true;
         virtualCall = true;
         try {
@@ -452,8 +506,9 @@ public class Bitboard {
     }
 
     /**
-     * Wipes the virtual instance back to the original board state. This will remove the virtualLock, and will allow
-     * for a new virtual instance to be utilized if desired.
+     * Wipes the virtual instance back to the original board state.
+     * This will remove the virtualLock, and will allow for a new virtual
+     * instance to be utilized if desired.
      */
     public void wipeVirtualization() {
         virtualLock = false;
@@ -462,31 +517,58 @@ public class Bitboard {
     }
 
     /**
-     * Writes the changes made by a virtual instance to the original board state. If the instance has a virtual lock
-     * enabled, the changes cannot be written.
+     * Writes the changes made by a virtual instance to the original board
+     * state. If the instance has a virtual lock enabled, the changes cannot be
+     * written.
      *
      * @throws IllegalArgumentException
-     *      If the invoking board isn't in a virtual state or the virtual lock is enabled to prevent write back.
+     *      If the invoking board isn't in a virtual state or the virtual lock
+     *      is enabled to prevent write back.
      */
     public void applyVirtualMovePermanently() throws IllegalArgumentException {
-        if (!virtualState) {
+        if (!virtualState)
             throw new IllegalArgumentException("Board must be in a virtual state to apply any virtual move permanently.");
-        }
-        else if (virtualLock) {
+        else if (virtualLock)
             throw new IllegalArgumentException("Virtual lock is enabled and the instance cannot be permanently written.");
-        }
+
         virtualState = false;
         applyChanges();
     }
 
-
-    // TODO: Refactor to use virtualization. This is inefficient.
+    /**
+     * <p>
+     * Returns a SaveState object that contains a hard copy for the current
+     * Bitboard state. Calls to restoreSaveState with the SaveState provided
+     * will return the game to the state it was previously in.
+     * </p><p>
+     * Note that anytime restoreSaveState is invoked, it will permanently switch
+     * the state back, without warning (regardless of whether virtualization is
+     * actively in use). Those utilizing this feature must heed
+     * caution to ensure they don't lose data that may be relevant.
+     * </p>
+     *
+     * @return SaveState
+     */
     public SaveState saveCurrentState() {
+        // TODO: refactor to move virtualization with circular queue.
         return new SaveState(tempBoards, tempColorBoards, enPassantBoard);
     }
 
-    // TODO: Refactor to use virtualization. This is inefficient.
+    /**
+     * <p>
+     * When given a SaveState object, this will restore the current bitboard to
+     * the state at which it was previously in.
+     * </p>
+     * <p>
+     * This call is permanent and irreversible, so those using it should ensure
+     * all data in the bitboard about to be wiped is no longer relevant.
+     * </p>
+     *
+     * @param saveState
+     *      object from a previous state the board was in.
+     */
     public void restoreSaveState(SaveState saveState) {
+        // TODO: refactor to move virtualization with circular stack.
         virtualLock = false;
         virtualState = false;
 
@@ -562,10 +644,10 @@ public class Bitboard {
         updateKingMasksCastle(move);
     }
 
-
     /**
-     * When given a board position, this will return the game piece that corresponds to any piece that may exist at that
-     * coordinate, otherwise it will return null.
+     * When given a board position, this will return the game piece that
+     * corresponds to any piece that may exist at that coordinate, otherwise it
+     * will return null.
      *
      * @param mask
      *      bit mask to check for a piece's location of.
@@ -586,18 +668,22 @@ public class Bitboard {
             }
 
             for (int i = 0; i < 6; i++) {
-                if ((pieceBitboards[i] & mask) != 0) {
+                if ((pieceBitboards[i] & mask) != 0)
                     return new Piece(pieceTypeArr[i], color); // piece type same as bitboard index
-                }
             }
-
             throw new IllegalStateException(); // thrown in any impossible states that would otherwise be ignored by a
                                                // null return.
         }
-
         return null; // no piece at that position
     }
 
+    /**
+     * When a move is marked for pawn promotion, it is passed into this private
+     * method so that the modifications get made to the bitboards.
+     *
+     * @param move
+     *      of a pawn to a promoted state.
+     */
     private void updatePawnPromotion(Move move) {
         int promotedType = move.getPromotedType().ordinal();
         int colorIndex = move.getMovedPieceColor().ordinal();
@@ -624,36 +710,47 @@ public class Bitboard {
         changeHist[changeHistSize++] = promotedType;
     }
 
-
-
+    /**
+     * If any pawn was moved to a position that would allow the opposing side to
+     * capture said pawn on the next turn (via en passant), this will recognize
+     * that and update the public field enPassantBoard. This field is reset to
+     * zero after each move, ensuring that the legal form of capture is upheld.
+     *
+     * @param colorIndex
+     *      Index of the color making the pawn move.
+     * @param from
+     *      masking bit for the pawns original position.
+     * @param to
+     *      masking bit for the pawns new position.
+     */
     private void checkEnPassantBoard(int colorIndex, long from, long to) {
         // TODO: get rid of unmodified enPassant masks in the boards array
         if ((from & tempBoards[1 - colorIndex][7]) != 0) { // boards[i][7] => enPassantFromMask
             if ((to & tempBoards[1 - colorIndex][8]) != 0) { // boards[i][8] => enPassantToMask
                 long mask;
-                if ((to & alternatingByteMask) != 0) {
+                if ((to & alternatingByteMask) != 0)
                     mask = alternatingByteMask;
-                }
-                else { mask = ~alternatingByteMask; }
+                else
+                    mask = ~alternatingByteMask;
 
-                if (((to << 1) & mask) != 0) {
+                if (((to << 1) & mask) != 0)
                     enPassantBoard |= (to << 1) & tempBoards[1 - colorIndex][0];
-                }
 
-                if (((to >>> 1 ) & mask) != 0) {
+                if (((to >>> 1 ) & mask) != 0)
                     enPassantBoard |= (to >>> 1) & tempBoards[1 - colorIndex][0];
-                }
+
                 enPassantBoard |= to;
             }
         }
     }
 
     /**
-     * Returns the boards array corresponding to a colors ordinal value. Note, this allows for unapproved modifications
-     * meaning its value shouldn't leave scope unless intended.
+     * Returns the boards array corresponding to a colors ordinal value. Note,
+     * this allows for unapproved modifications meaning its value shouldn't
+     * leave scope unless intended.
      *
      * @param color
-     *      Color corresponding to the board of interest
+     *      corresponds to the board of interest
      * @return tempBoards[color.ordinal()]
      */
     protected long[] getColorBoards(Piece.Color color) {
@@ -661,8 +758,9 @@ public class Bitboard {
     }
 
     /**
-     * Returns the boards array. As with above, this allows for unapproved modifications to the board that could lead to
-     * undefined behaviors.
+     * Returns the boards array. As with above, this allows for unapproved
+     * modifications to the board that could lead to undefined
+     * behaviors.
      *
      * @return boards
      */
@@ -671,8 +769,8 @@ public class Bitboard {
     }
 
     /**
-     * Returns the virtual boards (i.e.: temp boards). The same as getTempBoards(), but the usage is more clear with the
-     * given name.
+     * Returns the virtual boards (i.e.: temp boards). The same as
+     * getTempBoards(), but the usage is more clear with the given name.
      *
      * @return tempBoards
      */
@@ -680,16 +778,28 @@ public class Bitboard {
         return tempBoards;
     }
 
+    /**
+     * Returns the virtual color boards.
+     *
+     * @return tempColorBoards
+     */
     public long[] getVirtualColorBoards() {
         return tempColorBoards;
     }
 
+    /**
+     * Returns the game board, which has been updated for the virtual state if
+     * it exists.
+     *
+     * @return gameBoard
+     */
     public long getGameBoard() {
         return gameBoard;
     }
 
     /**
-     * Returns the full board as one long value corresponding to the color input.
+     * Returns the full board as one long value corresponding to the
+     * color input.
      *
      * @param color
      *      Color to find the board of
@@ -710,13 +820,11 @@ public class Bitboard {
         return colorIndex == 0 ? whiteBoard : blackBoard;
     }
 
-
     /**
-     * <p>
-     * When passed a color's ordinal value (i.e.: index), this will determine if that color's king is in a checked
-     * position. The masks are initialized to their default values, and only transformed for any king moves during the
+     * When passed a color's ordinal value (i.e.: index), this will determine if
+     * that color's king is in a checked position. The masks are initialized to
+     * their default values, and only transformed for any king moves during the
      * game.
-     * </p>
      *
      * @param colorIndex
      *      Color ordinal value of king to inspect.
@@ -730,7 +838,6 @@ public class Bitboard {
         long kDown   = tempBoards[colorIndex][10];
         long kLeft   = tempBoards[colorIndex][11];
         long kRight  = tempBoards[colorIndex][12];
-
         long diagUL  = tempBoards[colorIndex][13];
         long diagUR  = tempBoards[colorIndex][14];
         long diagLL  = tempBoards[colorIndex][15];
@@ -744,7 +851,6 @@ public class Bitboard {
             // Only candidates for check are enemy Queen or Rook
             return (kUpPiece & tempBoards[1 - colorIndex][3]) != 0 // piece is a rook
                 || (kUpPiece & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
-
         }
 
         long kDownPieces = kDown & tempGameBoard;
@@ -753,7 +859,6 @@ public class Bitboard {
 
             // We know opposing piece is below, but need to check which one is of direct threat along the attack vector.
             long kingPos = tempBoards[colorIndex][5];
-
             long pieceOfThreat = getMSB(oppColorBoard & kDownPieces, kingPos, 8);
 
             // Only candidates of threat are Rook or Queen
@@ -800,7 +905,6 @@ public class Bitboard {
             // Can be a Bishop or Queen in any compromised square
             return (diagULPiece & tempBoards[1 - colorIndex][2]) != 0 // piece is a bishop
                 || (diagULPiece & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
-
         }
 
         long diagURPiece = (diagUR & tempGameBoard) & -(diagUR & tempGameBoard);
@@ -842,21 +946,23 @@ public class Bitboard {
             return (pieceOfThreat & tempBoards[1 - colorIndex][2]) != 0 // piece is a bishop
                 || (pieceOfThreat & tempBoards[1 - colorIndex][4]) != 0;// piece is a queen
         }
-
         // Check to see if any of the opponents knights have a check position on the king.
         return (tempBoards[1 - colorIndex][1] & knights) != 0;
     }
 
     /**
      * <p>
-     * Acquires the MSB from a mask relating to a kings potential vulnerable squares. The step size relates to the
-     * direction of the kingMask, from the king's starting square. The MSB for the mask is associated with the first
+     * Acquires the MSB from a mask relating to a kings potential vulnerable
+     * squares. The step size relates to the direction of the kingMask, from the
+     * king's starting square. The MSB for the mask is associated with the first
      * piece closest to the king along the direction of vulnerability.
      * </p><p>
-     * Note, usage requires a kingMask != 0. In other words, there must be a 1 following in the direction of the step
-     * size, otherwise an exception will be thrown.
+     * Note, usage requires a kingMask != 0. In other words, there must be a 1
+     * following in the direction of the step size, otherwise an exception will
+     * be thrown.
      * </p><p>
-     * These are the only permitted mask directions as well as their associated step size:
+     * These are the only permitted mask directions as well as their associated
+     * step size:
      * <ul>
      * <li>Down: step = 8</li>
      * <li>Left: step = 1</li>
@@ -873,33 +979,38 @@ public class Bitboard {
      * @return Mask for piece of direct threat in the given direction
      */
     private long getMSB(long kingMask, long kingPos, int step) {
-        if ((kingPos & kingMask) != 0) {
+        if ((kingPos & kingMask) != 0)
             return kingPos & kingMask;
-        }
 
-        if (kingPos == 0) {
+        if (kingPos == 0)
             throw new IllegalStateException("Invalid king mask");
-        }
 
         return getMSB(kingMask, kingPos >>> step, step);
     }
 
-
+    /**
+     * Simple method to return if either the white or black king is no longer
+     * there, indicating the game has hit an end state.
+     *
+     * @return true if both kings on the board; false otherwise.
+     */
     public boolean kingMissing() {
         return tempBoards[0][5] == 0 || tempBoards[1][5] == 0;
     }
 
     /**
      * <p>
-     * Updates each of king's masks corresponding to the color of the move. This method will be called iff the king from
-     * either side is moved, whether by castling or normal means.
+     * Updates each of king's masks corresponding to the color of the move. This
+     * method will be called iff the king from either side is moved, whether by
+     * castling or normal means.
      * </p><p>
-     * These masks represent the vulnerable squares based on directions the king could be attacked from. When used with
-     * isKingInCheck(), the process of seeing whether an attacking piece has a check position on the king becomes
-     * trivial.
+     * These masks represent the vulnerable squares based on directions the king
+     * could be attacked from. When used with isKingInCheck(), the process of
+     * seeing whether an attacking piece has a check position on the king
+     * becomes trivial.
      * </p><p>
-     * The bitwise calculations to determine mask transformations are complicated, but local variables were added to aid
-     * in interpretation.
+     * The bitwise calculations to determine mask transformations are
+     * complicated, but local variables were added to aid in interpretation.
      * </p>
      *
      * @param move
@@ -913,8 +1024,6 @@ public class Bitboard {
         long rightBoundXor = 0x0101010101010101L;  // illegal col 0 for diagLR and diagUR
         long leftBoundXor  = 0x8080808080808080L;  // illegal col 7 for diagLL and diagUL
 
-        // FIXME: XOR does not work for this operation. Instead use (num & ~rightBoundXor)
-
         KingMoveDir moveDirection = findKingDirection(oldPos, newPos);
 
         long[] kingMask = tempBoards[colorIndex];
@@ -924,16 +1033,13 @@ public class Bitboard {
         long kDown   = kingMask[10]; // mask DOWN
         long kLeft   = kingMask[11]; // mask LEFT
         long kRight  = kingMask[12]; // mask RIGHT
-
         long diagUL  = kingMask[13]; // mask UPPER LEFT
         long diagUR  = kingMask[14]; // mask UPPER RIGHT
         long diagLL  = kingMask[15]; // mask LOWER LEFT
         long diagLR  = kingMask[16]; // mask LOWER RIGHT
-
         long knights = kingMask[17]; // mask KNIGHT SQUARES
 
         if (moveDirection == KingMoveDir.UP) {
-
             kingMask[9]  = newPos ^ kUp;
             kingMask[10] = oldPos | kDown;
 
@@ -947,10 +1053,8 @@ public class Bitboard {
             kingMask[16] = (oldPos << 1)  | (diagLR << 8);
 
             kingMask[17] = (knights << 8) | (oldPos << 2) | (oldPos >>> 2) | (oldPos >>> 7) | (oldPos >>> 9);
-
         }
         else if (moveDirection == KingMoveDir.DOWN) {
-
             kingMask[9]  = oldPos | kUp;
             kingMask[10] = newPos ^ kDown;
 
@@ -964,10 +1068,8 @@ public class Bitboard {
             kingMask[16] = diagLR >>> 8;
 
             kingMask[17] = (knights >>> 8) | (oldPos << 2) | (oldPos >>> 2) | (oldPos << 7) | (oldPos << 9);
-
         }
         else if (moveDirection == KingMoveDir.LEFT) {
-
             kingMask[9]  = kUp   >>> 1;
             kingMask[10] = kDown >>> 1;
 
@@ -981,10 +1083,8 @@ public class Bitboard {
             kingMask[16] = (oldPos | diagLR) >>> 8;
 
             kingMask[17] = (knights >>> 1) & ~leftBoundXor;
-
         }
         else if (moveDirection == KingMoveDir.RIGHT) {
-
             kingMask[9]  = kUp   << 1;
             kingMask[10] = kDown << 1;
 
@@ -1000,7 +1100,6 @@ public class Bitboard {
             kingMask[17] = (knights << 8) & ~rightBoundXor;
         }
         else if (moveDirection == KingMoveDir.UPPER_LEFT) {
-
             kingMask[9]  = (kUp >>> 1) ^ newPos;
             kingMask[10] = (kDown | oldPos) >>> 1;
 
@@ -1016,10 +1115,8 @@ public class Bitboard {
             kingMask[17] = (((knights << 7) | (oldPos >>> 3) | (oldPos >>> 10)) & ~(leftBoundXor | (leftBoundXor >>> 1)))
                     | (oldPos << 24)  | (oldPos >>> 8)
                     | (((oldPos << 1) | (oldPos << 17)) & ~rightBoundXor) ;
-
         }
         else if (moveDirection == KingMoveDir.UPPER_RIGHT) {
-
             kingMask[9]  = (kUp << 1) ^ newPos;
             kingMask[10] = (kDown | oldPos) << 1;
 
@@ -1035,10 +1132,8 @@ public class Bitboard {
             kingMask[17] = (((oldPos >>> 1) | (oldPos << 15)) & ~leftBoundXor)
                     | (oldPos >>> 8) | (oldPos << 24)
                     | (((oldPos << 3) | (knights << 9) | (oldPos >>> 6)) & ~(rightBoundXor | (rightBoundXor << 1)));
-
         }
         else if (moveDirection == KingMoveDir.LOWER_LEFT) {
-
             kingMask[9]  = (kUp | oldPos) >>> 1;
             kingMask[10] = (kDown >>> 1) ^ newPos;
 
@@ -1054,10 +1149,8 @@ public class Bitboard {
             kingMask[17] = (((knights >>> 9) | (oldPos >>> 3) | (oldPos << 6)) & ~(leftBoundXor | (leftBoundXor >>> 1)))
                     | (oldPos >>> 24) | (oldPos << 8)
                     | (((oldPos << 1) | (oldPos >>> 15)) & ~rightBoundXor);
-
         }
         else {// moveDirection == KingMoveDir.LOWER_RIGHT
-
             kingMask[9]  = (kUp | oldPos) << 1;
             kingMask[10] = (kDown << 1) ^ newPos;
 
@@ -1076,82 +1169,90 @@ public class Bitboard {
         }
 
         // Make sure to update these changes to the change history stack
-        for (int i = 9; i <= 17; i++) {
+        for (int i = 9; i <= 17; i++)
             appendChange(colorIndex, i);
-        }
     }
 
     /**
-     * Given a from and to position, this returns the KingMoveDir enum corresponding to the king's local axis of
-     * movement. If the king's movement is not one a legal movement, an exception will be thrown, as this should never
-     * occur under normal circumstances.
+     * Given a from and to position, this returns the KingMoveDir enum
+     * corresponding to the king's local axis of movement. If the king's
+     * movement is not one a legal movement, an exception will be thrown, as
+     * this should never occur under normal circumstances.
      *
      * @param from
-     *      Single bit for king's original position.
+     *      single bit for king's original position.
      * @param to
-     *      Single bit for king's new position.
+     *      single bit for king's new position.
      * @return KingMoveDir
      */
     private KingMoveDir findKingDirection(long from, long to) {
-        if (to == (from << 8)) {
+        if (to == (from << 8))
             return KingMoveDir.UP;
-        }
-        else if (to == (from >>> 8)) {
+        else if (to == (from >>> 8))
             return KingMoveDir.DOWN;
-        }
-        else if (to == (from >>> 1)) {
+        else if (to == (from >>> 1))
             return KingMoveDir.LEFT;
-        }
-        else if (to == (from << 1)) {
+        else if (to == (from << 1))
             return KingMoveDir.RIGHT;
-        }
-        else if (to == (from << 7)) {
+        else if (to == (from << 7))
             return KingMoveDir.UPPER_LEFT;
-        }
-        else if (to == (from << 9)) {
+        else if (to == (from << 9))
             return KingMoveDir.UPPER_RIGHT;
-        }
-        else if (to == (from >>> 9)) {
+        else if (to == (from >>> 9))
             return KingMoveDir.LOWER_LEFT;
-        }
-        else if (to == (from >>> 7)) {
+        else if (to == (from >>> 7))
             return KingMoveDir.LOWER_RIGHT;
-        }
 
         throw new IllegalStateException("King move was illegal!");
     }
 
-
+    /**
+     * When castling the king, instead of using multiple moves to represent the
+     * change in masking bits, the default values for both king and queen side
+     * masks have been precomputed. Therefore, a simple arraycopy will replace
+     * the nine king masks to the default values.
+     *
+     * @param move
+     *      castling the king.
+     */
     private void updateKingMasksCastle(Move move) {
-        if (move.getCastledRook() == Move.CastleSide.NONE) {
+        if (move.getCastledRook() == Move.CastleSide.NONE)
             throw new IllegalStateException("Passed a non-castled move to the update castle mask method!");
-        }
+
         int colorIndex = move.getMovedPieceColor().ordinal();
-        if (move.getCastledRook() == Move.CastleSide.QUEEN_SIDE) {
+        if (move.getCastledRook() == Move.CastleSide.QUEEN_SIDE)
             System.arraycopy(defaultQueenSideCastleMasks[colorIndex], 0, tempBoards[colorIndex], 9, 9);
-        }
-        else { // move.getCastledRook() == Move.CastleSide.KING_SIDE
+        else // move.getCastledRook() == Move.CastleSide.KING_SIDE
             System.arraycopy(defaultKingSideCastleMasks[colorIndex], 0, tempBoards[colorIndex], 9, 9);
-        }
 
         // Update the change history stack
-        for (int i = 9; i <= 17; i++) {
+        for (int i = 9; i <= 17; i++)
             appendChange(colorIndex, i);
-        }
     }
+
+
+    /*  === PRINTING METHODS ===*/
 
     /**
      * Boards printer used for testing purposes.
      */
     public void printGameBoard() {
         char[][] pieces = buildDefaultPieces();
-
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 2; i++)
             populate(pieces, i);
-        }
+
         System.out.println(prettyPrintPieces(pieces));
     }
 
+    /**
+     * Populates the pieces wit corresponding to the ordinal value of each piece
+     * at the given color index.
+     *
+     * @param pieces
+     *      8x8 2D blank char array
+     * @param colorIndex
+     *      0 -> white<br>1 -> black
+     */
     private void populate(char[][] pieces, int colorIndex) {
         populatePieces(pieces, tempBoards[colorIndex][0],'p');
         populatePieces(pieces, tempBoards[colorIndex][1],'N');
@@ -1161,15 +1262,27 @@ public class Bitboard {
         populatePieces(pieces, tempBoards[colorIndex][5],'K');
     }
 
+    /**
+     * Pretty prints the board for a specific color
+     *
+     * @param color
+     *      board to print.
+     */
     public void printColorBoard(Piece.Color color) {
         int colorIndex = color.ordinal();
         char[][] pieces = buildDefaultPieces();
-
         populate(pieces, colorIndex);
 
         System.out.println(prettyPrintPieces(pieces));
     }
 
+    /**
+     * Represents any input mask on the board by pretty printing the output.
+     * Does not need to relate to the bitboards themselves.
+     *
+     * @param mask
+     *      to print the positions for.
+     */
     public void printMask(long mask) {
         char[][] pieces = buildDefaultPieces();
         populatePieces(pieces, mask, 'X');
@@ -1177,23 +1290,31 @@ public class Bitboard {
         System.out.println(prettyPrintPieces(pieces));
     }
 
+    /**
+     * Prints all the king masks for the specific color.
+     *
+     * @param color
+     *      to print the king masks for.
+     */
     public void printKingMasks(Piece.Color color) {
         int colorIndex = color.ordinal();
         char[][] pieces = buildDefaultPieces();
-        populatePieces(pieces, tempBoards[colorIndex][5],'K');
-        populatePieces(pieces, tempBoards[colorIndex][9],'#');
-        populatePieces(pieces, tempBoards[colorIndex][10],'#');
-        populatePieces(pieces, tempBoards[colorIndex][11],'#');
-        populatePieces(pieces, tempBoards[colorIndex][12],'#');
-        populatePieces(pieces, tempBoards[colorIndex][13],'#');
-        populatePieces(pieces, tempBoards[colorIndex][14],'#');
-        populatePieces(pieces, tempBoards[colorIndex][15],'#');
-        populatePieces(pieces, tempBoards[colorIndex][16],'#');
+        for (int i = 9; i < 17; i++)
+            populatePieces(pieces, tempBoards[colorIndex][i], '#');
+
         populatePieces(pieces, tempBoards[colorIndex][17],'*');
+        populatePieces(pieces, tempBoards[colorIndex][5],'K');
 
         System.out.println(prettyPrintPieces(pieces));
     }
 
+    /**
+     * Helper method that will build a string output using a 2D array.
+     *
+     * @param p
+     *      2D array representative of the 8x8 chess board
+     * @return String built up chess board
+     */
     private String prettyPrintPieces(char[][] p) {
         StringBuilder printStr = new StringBuilder("   _______________________________\n");
         for (int i = 7; i >= 1; i--) {
@@ -1209,8 +1330,18 @@ public class Bitboard {
         return printStr.toString();
     }
 
-    // Takes the mask, appends the icon to replace the default white space to indicate that a piece exists at that
-    // location. Fairly straight forward, mainly used for debugging and testing purposes.
+    /**
+     * Takes the mask, appends the icon to replace the default white space to
+     * indicate that a piece exists at that location. Fairly straight forward,
+     * mainly used for debugging and testing purposes.
+     *
+     * @param pieces
+     *      8x8 2D char board for printing.
+     * @param mask
+     *      long for piece locations on the board
+     * @param icon
+     *      character to represent the masking bits.
+     */
     private void populatePieces(char[][] pieces, long mask, char icon) {
         long rankIter = 0x00FFL; // rank 1
         long fileIter = 0x0101010101010101L;// file A
@@ -1219,9 +1350,8 @@ public class Bitboard {
             if ((mask & rankIter) != 0) {
                 long tempMask = mask & rankIter;
                 for (int f = 0; f < 8; f++) {
-                    if ((tempMask & fileIter) != 0) {
+                    if ((tempMask & fileIter) != 0)
                         pieces[r][f] = icon;
-                    }
                     fileIter = fileIter << 1;
                 }
             }
@@ -1232,19 +1362,30 @@ public class Bitboard {
 
     }
 
-
+    /**
+     * Prints the 1s and 0s that make up the bitboard backing storage. This was
+     * implemented as a great way of showing how the underlying process works
+     * in leveraging the abilities of 64 bit longs.
+     */
     public void printGameBoardBits() {
         char[][] pieces = buildNonDefaultPieces('0');
 
-        for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 8; j++) {
-                populatePieces(pieces, boards[i][j],'1');
-            }
-        }
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < 8; j++)
+                populatePieces(pieces, tempBoards[i][j],'1');
+
         prettyPrintPieces(pieces);
         System.out.println("Game Board: " + GameEngine.hexString(gameBoard));
     }
 
+    /**
+     * Helper for the printing methods that fills the character array with the
+     * default char 'c' and returns the 8x8 2D array.
+     *
+     * @param c
+     *      default value for filling 2D array (typically b' ')
+     * @return filled char[][]
+     */
     private char[][] buildNonDefaultPieces(char c) {
         char[][] pieces = new char[8][];
         for (int i = 0; i < 8; i++) {
@@ -1254,21 +1395,29 @@ public class Bitboard {
         return pieces;
     }
 
-    // Builds up the pieces double char array for printing purposes. This action isn't efficient, nor intended as a
-    // final implementation for physical use. Serves exclusively as a helpful visual for testing purposes.
+    /**
+     * Builds up the pieces double char array for printing purposes. This action
+     * isn't efficient, nor intended as a final implementation for physical use.
+     * Serves exclusively as a helpful visual for testing purposes.
+     *
+     * @return 8x8 2D character array of blank spaces
+     */
     private char[][] buildDefaultPieces() {
-        char[][] pieces = new char[8][];
-        for (int i = 0; i < 8; i++) {
-            pieces[i] = new char[]{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
-        }
-
-        return pieces;
+        return buildNonDefaultPieces(' ');
     }
 
-    public void printAllGameBoards() {
-        System.out.println(this);
-    }
-
+    /**
+     * Returns a string for all relevant boards in a human-readable format that
+     * are useful for the purposes of debugging.
+     *
+     * @param p
+     *      2D char array representing both white and black pieces.
+     * @param w
+     *      2D char array representing white pieces.
+     * @param b
+     *      2D char array representing black pieces.
+     * @return String
+     */
     private String prettyPrintAllPieces(char[][] p, char[][] w, char[][] b) {
         StringBuilder printStr = new StringBuilder("\n           GAME BOARD                 #             WHITE BOARD" +
                 "                 #             BLACK BOARD               \n");
@@ -1299,6 +1448,14 @@ public class Bitboard {
         return printStr.toString();
     }
 
+    /**
+     * Simple toString() implementation that invokes the pretty printing methods
+     * to return a combined string with the three different boards (complete,
+     * white, and black), as well as the masking bits for the kings of both
+     * associated colors.
+     *
+     * @return human-readable string.
+     */
     @Override
     public String toString() {
         char[][] pieces = buildDefaultPieces();
@@ -1310,30 +1467,17 @@ public class Bitboard {
         populate(whitePieces, 0);
         populate(blackPieces, 1);
 
-
         char[][] whiteMasks = buildDefaultPieces();
-        populatePieces(whiteMasks, tempBoards[0][5],'K');
-        populatePieces(whiteMasks, tempBoards[0][9],'#');
-        populatePieces(whiteMasks, tempBoards[0][10],'#');
-        populatePieces(whiteMasks, tempBoards[0][11],'#');
-        populatePieces(whiteMasks, tempBoards[0][12],'#');
-        populatePieces(whiteMasks, tempBoards[0][13],'#');
-        populatePieces(whiteMasks, tempBoards[0][14],'#');
-        populatePieces(whiteMasks, tempBoards[0][15],'#');
-        populatePieces(whiteMasks, tempBoards[0][16],'#');
+        for (int i = 9; i < 17; i++)
+            populatePieces(whiteMasks, tempBoards[0][i], '#');
         populatePieces(whiteMasks, tempBoards[0][17],'*');
+        populatePieces(whiteMasks, tempBoards[0][5],'K');
 
         char[][] blackMasks = buildDefaultPieces();
-        populatePieces(blackMasks, tempBoards[1][5],'K');
-        populatePieces(blackMasks, tempBoards[1][9],'#');
-        populatePieces(blackMasks, tempBoards[1][10],'#');
-        populatePieces(blackMasks, tempBoards[1][11],'#');
-        populatePieces(blackMasks, tempBoards[1][12],'#');
-        populatePieces(blackMasks, tempBoards[1][13],'#');
-        populatePieces(blackMasks, tempBoards[1][14],'#');
-        populatePieces(blackMasks, tempBoards[1][15],'#');
-        populatePieces(blackMasks, tempBoards[1][16],'#');
+        for (int i = 9; i < 17; i++)
+            populatePieces(whiteMasks, tempBoards[0][i], '#');
         populatePieces(blackMasks, tempBoards[1][17],'*');
+        populatePieces(blackMasks, tempBoards[1][5],'K');
 
         String masks = "\n------------ WHITE KING MASKS ----------------\n" + prettyPrintPieces(whiteMasks) +
                        "\n------------ BLACK KING MASKS ----------------\n" + prettyPrintPieces(blackMasks);

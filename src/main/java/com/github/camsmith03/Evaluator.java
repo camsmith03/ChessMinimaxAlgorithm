@@ -1,72 +1,18 @@
 package com.github.camsmith03;
 
+/**
+ * Evaluator has the heuristics used to take a boardController in its static state, apply
+ * an integer to represent its overall value, then return it to be utilized by
+ * minimax. Changes to the heuristic have massive effects on the minimax output.
+ * TODO: this is the weakest link for all the methods created. fixing the issues
+ *       and improving the heuristic should solve most (if not all) of the
+ *       issues for minimax.
+ *
+ * @author Cameron Smith
+ * @version 09.04.2024
+ */
 public class Evaluator {
-
-    /*
-    GOALS:
-        - evaluateMoves(MoveList, boolean buildMax) -> Heap
-        - evaluate(Bitboard) -> int
-
-    PLAN:
-
-        We need to organize the structure of this class to prevent confusion.
-
-        First, given a bitboard, this must be able to compute an int value corresponding with some predefined weights.
-
-        Considerations for different weights:
-            - Piece value
-            - Control over center
-            - Moves that put enemy king in check
-            - Piece captures
-            - Castling weight
-            etc...
-
-        These weights should be adjustable so that small tweaks can be made and tested to find the perfect configuration
-        of them all.
-
-
-        Second, we have to determine who will be building the heap of evaluated integers.
-
-            It could be...
-                - Evaluator -> this is a valid approach, but it also introduces the need to interface between MoveList.
-
-                - MoveList -> this would allow MoveList to build a heap, although, would it take away from MoveList
-                              being solely a data structure
-
-                - Minimax  -> don't really know if its the best or worst approach as of right now.
-
-
-            We know our input will be a MoveList. This puts MoveList as a valid contender for offering the best
-            solution. We can create a Heap data structure designed for KVPairs of Moves and Integers, then interface
-            with Evaluator for every MoveList element until they are all appended to the Heap.
-
-            Note, we designed MoveList to be an array of LinkedLists, which has the benefit of separating the piece
-            moves by type. Knowing this, moves that tend to lead to higher or lower values based on type can be computed
-            before others to speed up Heap construction. This efficiency boost would probably be minimal at best, which
-            puts our design for MoveList at a disadvantage.
-
-            MoveList does have the ability to quickly clear a list. This means we really only need one object to
-            represent it.
-
-            Think about how this would work:
-                - including a tempMove() method to bitboard (update boards but keep tempBoards as copy),
-                - passing bitboard to evaluator,
-                - evaluating boards,
-                - undoing said move with an undoMove() method (restoring copy).
-
-            Is this the best approach? Is there a better alternative? What about Board?
-
-            Should Evaluator be passed a Move instead?
-                No, we want the evaluation to be done on static boards.
-
-            This is a tough one
-
-     */
-    private final Piece.Color maximizer;
-    private final Piece.Color minimizer;
-    private final Piece.Color finalMoveColor;
-    private final boolean playerMove;
-    private boolean awardCentral = true; // flip to false after 10+ moves are made (15+ post move board gets evaluated)
+    private boolean awardCentral = true; // flip to false after 10+ moves are made (15+ post move boardController gets evaluated)
     private int evalMultiplier = 1;
     private final Bitboard board;
     private static final int[] PIECE_VAL = new int[]{1, 3, 3, 5, 9}; // official piece values.
@@ -74,68 +20,61 @@ public class Evaluator {
     private static final long outerRing = 0x00003C24243C0000L; // ring surrounding center 4 squares
 
 
+    /**
+     * Constructor for Evaluator.
+     *
+     * @param board
+     *      bitboard to be modified at runtime by Minimax.
+     * @param maximizer
+     *      color for the lifetime of the program.
+     * @param treeDepth
+     *      TODO: unused
+     */
     public Evaluator(Bitboard board, Piece.Color maximizer, int treeDepth) {
-
-        this.maximizer = maximizer;
         if (maximizer == Piece.Color.BLACK) {
-            this.minimizer = Piece.Color.WHITE;
             evalMultiplier = -1; // evaluate(Move) defaults to assume black is the minimizer.
                                  // multiplying by negative 1 will reverse the output.
         }
-        else
-            this.minimizer = Piece.Color.BLACK;
+
 
         this.board = board;
-        if (treeDepth % 2 == 0) {
-            finalMoveColor = minimizer;
-            playerMove = finalMoveColor == Piece.Color.WHITE;
-        }
-        else {
-            finalMoveColor = maximizer;
-            playerMove = finalMoveColor == Piece.Color.BLACK;
-        }
-
     }
 
     // assumes that a try/catch was already made on the move to ensure its legality, and that the move has been applied
     // to the virtual boards.
     // Will also base calculations such that white -> maximizer, black -> minimizer. A multiplier initialized in the
     // constructor will invert the output assuming the player is actually black.
+
+    /**
+     * Assuming a try/catch was made to ensure the move is considered legal, and
+     * that the move was applied to the virtual boards, this will return an
+     * integer value corresponding the static evaluation of the boardController. The
+     * helper methods base their calculations on white being the maximizer,
+     * which the evalMultiplier uses to invert their outputs if that isn't the
+     * case.
+     *
+     * @param move
+     *      already applied the current boardController. TODO: no longer used
+     * @return integer representing the static evaluation.
+     */
     public int evaluate(Move move) {
         long[][] boards = board.getVirtualBoards();
         long[] colorBoards = board.getVirtualColorBoards();
 
-        int evaluation = materialEval(boards) + developmentEval(boards, colorBoards) + safetyEval(boards);
+        int evaluation = materialEval(boards) + developmentEval(boards, colorBoards);
 
-//        if (move.getPromotedType() != Piece.Type.NONE) {
-//            // TODO: Come back and rethink promotion rewards. Promotion may be an intermittent move that was made. This
-//            //       goes against static definition of static evaluation.
-//            if (playerMove)
-//                evaluation += 50; // encourage player promotion
-//            else
-//                evaluation -= 50; // discourage opponent promotion
-//        }
-//        else if (move.getCastledRook() != Move.CastleSide.NONE) {
-//            if (playerMove) {
-//                evaluation += 50;
-//            }
-//        }
-
-        return evaluation * evalMultiplier;
+        return evaluation * evalMultiplier; // TODO: evalMultiplier can't tell treeDepth for differentiation!!
     }
 
 
 
     /**
-     * Evaluates who has the material advantage for the current board. Returns an integer assuming that black is the
-     * minimizer (can multiply by negative 1 to invert it if not).
-     * <br>
-     * Considerations:
-     *  -> High value of Queen
-     *  -> Pair of two bishops on the board
-     *  -> General piece value
+     * Evaluates who has the material advantage for the current boardController. Returns
+     * an integer assuming white is the maximizer.
      *
-     * @return
+     * @param boards
+     *      representing the current boardController configuration.
+     * @return evaluation under the material calculations.
      */
     private int materialEval(long[][] boards) {
         int blackMaterial = 0;
@@ -169,6 +108,18 @@ public class Evaluator {
                                               // advantage.
     }
 
+    /**
+     * Evaluates who has better developed pieces for the current boardController. The
+     * flag "awardCentral" is controllable from the outside to stop providing
+     * incentives towards the central squares after a certain number of moves
+     * have passed.
+     *
+     * @param boards
+     *      representing the current boardController configuration.
+     * @param colorBoards
+     *      for the piece designated values.
+     * @return evaluation under the development calculations.
+     */
     private int developmentEval(long[][] boards, long[] colorBoards) {
         // Pawn structure, Piece placement, Open Files and Diagonals, Piece mobility
         int whiteDevelopment = 0;
@@ -203,18 +154,15 @@ public class Evaluator {
         return whiteDevelopment - blackDevelopment;
     }
 
-    private int safetyEval(long[][] boards) {
-        return 0;
-    }
-
     /**
-     * After 20+ moves have been made, the number of moves that will be applied to the board will mean the mid-game is
-     * approaching its conclusion and end game prep should be made. Awarding central square bonuses is trivial since the
-     * stability of the central squares is not as big a concern.
+     * After a certain number of moves have been made, the number of moves that
+     * will be applied to the boardController will mean the mid-game is approaching its
+     * conclusion and end game prep should be made. Awarding central square
+     * bonuses is trivial since the stability of the central squares is not as
+     * big a concern.
      * <br>
-     * This is left to be utilized by Minimax to allow multiple configurations to be attempted and see which one leads
-     * to a preferable outcome.
-     *
+     * This is left to be utilized by Minimax to allow multiple configurations
+     * to be attempted and see which one leads to a preferable outcome.
      */
     public void stopCentralBonus() {
         awardCentral = false;

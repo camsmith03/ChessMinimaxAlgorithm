@@ -1,10 +1,12 @@
 package com.github.camsmith03;
 
 /**
- * Acts as the interpreter for InputLexer that will handle interfacing with the backend bitboard for any parsed input
- * data. This is primarily used to abstract some of the lower end procedures away that are required to verify move
- * validity. Lexer will only handle input grammar, whereas the analyzer exists to ensure board legality from the chess
- * notation, throwing exceptions for any discovered violations.
+ * Acts as the interpreter for InputLexer that will handle interfacing with the
+ * backend bitboard for any parsed input data. This is primarily used to
+ * abstract some of the lower end procedures away that are required to verify
+ * move validity. Lexer will only handle input grammar, whereas the analyzer
+ * exists to ensure boardController legality from the chess notation, throwing exceptions
+ * for any discovered violations.
  *
  * @author Cameron Smith
  * @version 08.08.2024
@@ -12,33 +14,35 @@ package com.github.camsmith03;
 public class InputAnalyzer {
     private final Bitboard board;
     private final long[][] bitboards;
-    private final long[] ranks = new long[]{
-            0x00000000000000FFL,
-            0x000000000000FF00L,
-            0x0000000000FF0000L,
-            0x00000000FF000000L,
-            0x000000FF00000000L,
-            0x0000FF0000000000L,
-            0x00FF000000000000L,
-            0xFF00000000000000L,
-    };
-    private final long[] files = new long[] {
-            0x0101010101010101L,
-            0x0202020202020202L,
-            0x0404040404040404L,
-            0x0808080808080808L,
-            0x1010101010101010L,
-            0x2020202020202020L,
-            0x4040404040404040L,
-            0x8080808080808080L
-    };
+    private final long[] ranks = new long[]{ 0x00000000000000FFL, 0x000000000000FF00L, 0x0000000000FF0000L,
+            0x00000000FF000000L, 0x000000FF00000000L, 0x0000FF0000000000L, 0x00FF000000000000L, 0xFF00000000000000L };
+    private final long[] files = new long[]{ 0x0101010101010101L, 0x0202020202020202L, 0x0404040404040404L,
+            0x0808080808080808L, 0x1010101010101010L, 0x2020202020202020L, 0x4040404040404040L, 0x8080808080808080L };
 
+    /**
+     * Constructor for the input analyzer.
+     * TODO: color is the same throughout execution, so instead of passing it,
+     *       we should use constant fields.
+     *
+     * @param board
+     *      bitboard to be used throughout the lifetime of this class.
+     */
     public InputAnalyzer(Bitboard board) {
         this.board = board;
         this.bitboards = board.getBoards();
     }
 
-
+    /**
+     * Method to interpret and verify legality for a king move being made.
+     *
+     * @param color
+     *      of the current moved king.
+     * @param destFile
+     *      of the king.
+     * @param destRank
+     *      of the king.
+     * @return Move if deemed legal.
+     */
     public Move analyzeKingMove(Piece.Color color, int destFile, int destRank) {
         long toMask = getMask(destFile, destRank);
         long kingPos = board.getColorBoards(color)[5];
@@ -56,27 +60,29 @@ public class InputAnalyzer {
 
     /**
      * <p>
-     *     Analyze method for either the Knight(N), Bishop(B), Rook(R), or Queen(Q). These were combined into one method
-     *     since the lexer could leverage that all three have the same input notation, aside from the first letter.
+     * Analyze method for either the Knight(N), Bishop(B), Rook(R), or Queen(Q).
+     * These were combined into one method since the lexer could leverage that
+     * all three have the same input notation, aside from the first letter.
      * </p><p>
-     *     This version is used for non-ambiguous moves where the origin piece should be easily determined (assuming
-     *     input is valid). Examples include: Ne4, Bxe4, Re4, Qb5
+     * This version is used for non-ambiguous moves where the origin piece
+     * should be easily determined (assuming input is valid).
+     * Examples include: Ne4, Bxe4, Re4, Qb5
      * </p>
      *
      * @param color
-     *      Color of the current turn.
+     *      of the current turn.
      * @param type
-     *      Piece type (either knight, bishop, rook, or queen)
+     *      either knight, bishop, rook, or queen.
      * @param capturedPiece
-     *      Boolean representing whether a piece exists at the destination square.
+     *      flag representing whether a piece exists at the destination square.
      * @param destFile
-     *      Zero-based destination file index.
+     *      is a zero-based destination file index.
      * @param destRank
-     *      Zero-based destination rank index.
-     * @throws IllegalStateException
-     *      Thrown if the Move isn't valid with the current board configuration.
-     * @return Move if it's deemed valid
+     *      is a zero-based destination rank index.
+     * @return Move if  deemed legal.
      *
+     * @throws IllegalStateException
+     *      Thrown if the Move isn't valid with the current boardController configuration.
      */
     public Move analyzeNBRQ(Piece.Color color, Piece.Type type, boolean capturedPiece, int destFile, int destRank)
                             throws IllegalStateException {
@@ -163,7 +169,7 @@ public class InputAnalyzer {
      * @param sourceIsFile
      *      Boolean that is true if the source index is file-based; false if rank-based.
      * @throws IllegalStateException
-     *      Thrown if the Move isn't valid with the current board configuration.
+     *      Thrown if the Move isn't valid with the current boardController configuration.
      * @return Move if it is valid
      */
     public Move analyzeNBRQ(Piece.Color color, Piece.Type type, boolean capturedPiece, int destFile, int destRank, int source,
@@ -251,7 +257,7 @@ public class InputAnalyzer {
      * @param sourceRank
      *      Zero-based source file index.
      * @throws IllegalStateException
-     *      Thrown if the Move isn't valid with the current board configuration.
+     *      Thrown if the Move isn't valid with the current boardController configuration.
      * @return Move if it is valid
      */
     public Move analyzeNBRQ(Piece.Color color, Piece.Type type, boolean capturedPiece, int destFile, int destRank,
@@ -285,9 +291,8 @@ public class InputAnalyzer {
         }
 
         if (capturedPiece) {
-            if ((oppBoard & toMask) == 0) {
+            if ((oppBoard & toMask) == 0)
                 throw new IllegalStateException("Invalid move (input attempts capture on an empty square)");
-            }
 
             Piece capturedPieceObj = board.getPiece(toMask);
 
@@ -296,9 +301,9 @@ public class InputAnalyzer {
 
             return move;
         }
-        else if ((oppBoard & toMask) != 0) {
+        else if ((oppBoard & toMask) != 0)
             throw new IllegalStateException("Invalid move (make sure to mark any captured squares with 'x')");
-        }
+
 
         Move move = new Move(fromMask, toMask, type, color);
         ensureLegal(move);
@@ -307,11 +312,20 @@ public class InputAnalyzer {
     }
 
 
-
+    /**
+     * Method to check the validity of a pawn (non-capture) move.
+     *
+     * @param color
+     *      of the moved pawn.
+     * @param destFile
+     *      of the moved pawn.
+     * @param destRank
+     *      of the moved pawn.
+     * @return Move if deemed legal.
+     */
     public Move analyzePawn(Piece.Color color, int destFile, int destRank) {
         long pawnTo = getMask(destFile, destRank);
         long pawnFrom;
-//        Piece pawn;
 
         if (color == Piece.Color.WHITE) {
             if ((pawnTo & 0x00000000FF000000L) != 0) {
@@ -319,44 +333,41 @@ public class InputAnalyzer {
                 Piece pawn1 = board.getPiece(pawnTo >>> 8);
                 Piece pawn2 = board.getPiece(pawnTo >>> 16);
                 if (pawn1 == null) {
-                    if (pawn2 == null) {
+                    if (pawn2 == null)
                         throw new IllegalStateException("White pawn move is not legal");
-                    }
-//                    pawn = pawn2;
+
                     pawnFrom = pawnTo >>> 16;
-                } else {
-//                    pawn = pawn1;
-                    pawnFrom = pawnTo >>> 8;
                 }
-            } else {
+                else
+                    pawnFrom = pawnTo >>> 8;
+            }
+            else {
                 Piece pawn = board.getPiece(pawnTo >>> 8);
                 pawnFrom = pawnTo >>> 8;
-                if (pawn == null) {
+                if (pawn == null)
                     throw new IllegalStateException("White pawn move is not legal");
-                }
             }
-        } else {
+        }
+        else {
             if ((pawnTo & 0x000000FF00000000L) != 0) {
                 // pawn can move down two legally, must check for both conditions
                 Piece pawn1 = board.getPiece(pawnTo << 8);
                 Piece pawn2 = board.getPiece(pawnTo << 16);
 
                 if (pawn1 == null) {
-                    if (pawn2 == null) {
+                    if (pawn2 == null)
                         throw new IllegalStateException("Black pawn move is not legal");
-                    }
-//                    pawn = pawn2;
+
                     pawnFrom = pawnTo << 16;
-                } else {
-//                    pawn = pawn1;
-                    pawnFrom = pawnTo << 8;
                 }
-            } else {
+                else
+                    pawnFrom = pawnTo << 8;
+            }
+            else {
                 Piece pawn = board.getPiece(pawnTo << 8);
                 pawnFrom = pawnTo << 8;
-                if (pawn == null) {
+                if (pawn == null)
                     throw new IllegalStateException("Black pawn move is not legal");
-                }
             }
         }
 
@@ -367,31 +378,39 @@ public class InputAnalyzer {
 
     }
 
-    public Move analyzePawnCapture(Piece.Color color, int destFile, int destRank, int sourceFile) {
-        int sourceRank;
-        if (color == Piece.Color.WHITE) {
-            sourceRank = destRank - 1;
-        } else {
-            sourceRank = destRank + 1;
-        }
+    /**
+     * Checks to see if the arguments used correspond to a move that can be made
+     * for the pawns belonging to the Piece.Color.
+     *
+     * @param color
+     *      of the side capturing the piece.
+     * @param destFile
+     *      index of the destination file (zero-based).
+     * @param destRank
+     *      index of the destination rank (zero-based).
+     * @param sourceFile
+     *      index of the moved pawn's origin file (zero-based)
+     * @return Move if deemed legal.
+     *
+     * @throws IllegalStateException
+     *      If the pawn capture isn't possible for the current boardController
+     *      configuration.
+     */
+    public Move analyzePawnCapture(Piece.Color color, int destFile, int destRank, int sourceFile) throws IllegalStateException {
+        int sourceRank = color == Piece.Color.WHITE ? destRank - 1 : destRank + 1;
         long pawnFrom = getMask(sourceFile, sourceRank);
-        Piece pawnLoc = board.getPiece(pawnFrom);
 
-        if ( (bitboards[color.ordinal()][0] & pawnFrom) == 0) {
-            // Invoked color pawn doesn't exist at the source location
-            throw new IllegalStateException("Invalid pawn start position");
-        }
-
+        if ( (bitboards[color.ordinal()][0] & pawnFrom) == 0)
+            throw new IllegalStateException("Invalid pawn start position"); // Invoked color pawn doesn't exist at the
+                                                                            // source location
         long captured = getMask(destFile, destRank);
         Piece capturedPiece = board.getPiece(captured);
 
-        if (capturedPiece == null) {
+        if (capturedPiece == null)
             throw new IllegalStateException("Pawn capture square is empty (or e.p. not included in the input)");
-        }
 
-        if (capturedPiece.color == color) {
+        if (capturedPiece.color == color)
             throw new IllegalStateException("Pawn capture square can't be the same color");
-        }
 
         Move move = new Move(pawnFrom, captured, Piece.Type.PAWN, color, capturedPiece.type);
         ensureLegal(move);
@@ -399,36 +418,39 @@ public class InputAnalyzer {
         return move;
     }
 
+    /**
+     * TODO: modify such that InputLexer will provide the necessary arguments to
+     *       avoid the conversions made here.
+     */
     public Move analyzePawnEnPassant(String input, Piece.Color color) {
         long captured = getMask(input.charAt(2), getAsciiInt(input.charAt(3)));
 
         int rank;
-        if (color == Piece.Color.WHITE) {
+        if (color == Piece.Color.WHITE)
             rank = getAsciiInt(input.charAt(3)) - 1;
-        } else {
+        else
             rank = getAsciiInt(input.charAt(3)) + 1;
-        }
+
 
         long pawnFrom = getMask(input.charAt(0), rank);
         Piece pawnLoc = board.getPiece(pawnFrom);
 
-        if (pawnLoc == null) {
+        if (pawnLoc == null)
             throw new IllegalStateException("Invalid pawn start position");
-        }
 
-        if (pawnLoc.color != color) {
+        if (pawnLoc.color != color)
             throw new IllegalStateException("Invalid pawn start location");
-        }
+
 
 
         if ((captured & board.getGameBoard()) == 0) {
             // ensure that square is free
             long passantPiece;
-            if (color == Piece.Color.WHITE) {
+            if (color == Piece.Color.WHITE)
                 passantPiece = captured >>> 8;
-            } else {
+            else
                 passantPiece = captured << 8;
-            }
+
             Piece capturedPiece = board.getPiece(passantPiece);
 
             if (capturedPiece != null) {
@@ -436,14 +458,14 @@ public class InputAnalyzer {
 
                 // Check the enPassantBoard to ensure the piece in question has been marked from the previous turn.
                 long enPassantBoard = board.enPassantBoard;
-                if ((enPassantBoard & passantPiece) == 0) {
+                if ((enPassantBoard & passantPiece) == 0)
                     throw new IllegalStateException("Invalid en passant captured location");
-                }
+
                 // At this point, we can confirm the piece has been captured and the move was successful.
                 Move enPassantMove = new Move(pawnFrom, captured, Piece.Type.PAWN, color, Piece.Type.PAWN);
 
-                // We have to set the enPassantCaptured bit in the Move object to signify that there was a capture
-                // without having the piece be assumed to exist at the "pawnTo" location.
+                // We have to set the enPassantCaptured bit in the Move object to signify that there was a capture to
+                // avoid the piece be assumed to have been captured at the "pawnTo" location.
                 enPassantMove.setEnPassant(passantPiece);
                 ensureLegal(enPassantMove);
 
@@ -454,15 +476,38 @@ public class InputAnalyzer {
     }
 
 
+    // TODO: Allow for this move to be made by the player
     public Move analyzePromotedPawn(String input, Piece.Color color, boolean pieceCaptured, char promotedPiece) {
-
-        throw new IllegalStateException("UNSUPPORTED MOVE");
+        System.out.println("UNSUPPORTED MOVE");
+        System.exit(1);
+        return null;
     }
 
+    // TODO: Allow for this move to be made by the player
     public Move analyzeCastle(boolean kingSideCastle, Piece.Color color) {
-        throw new IllegalArgumentException("UNSUPPORTED MOVE");
+        System.out.println("UNSUPPORTED MOVE");
+        System.exit(1);
+        return null;
     }
 
+    /**
+     * When invoked with a single square as the destination. It will find the
+     * masking bits corresponding to pieces of the given type that could legally
+     * reach that square. This is essential for piece ambiguity, where multiple
+     * pieces of the same type (and color) could reach a given square.
+     * TODO: pieceBoard & colorBoard args are not needed.
+     *
+     * @param dest
+     *      bit representing the square the piece is moved to.
+     * @param colorBoard
+     *      for the current turn.
+     * @param pieceBoard
+     *      for the current turn.
+     * @param type
+     *      labeled to move (matching the pieceBoard).
+     * @return mask(s) that hold the bits matching the locations for the pieces
+     *         of the type and color that could reach the dest.
+     */
     private long maskGenerator(long dest, long colorBoard, long pieceBoard, Piece.Type type) {
         long fileA = 0x0101010101010101L;
         long fileB = 0x0202020202020202L;
@@ -500,14 +545,33 @@ public class InputAnalyzer {
         throw new IllegalArgumentException("Piece type is NONE");
     }
 
+    /**
+     * Helper method for maskGenerator used for bishops. This will use some
+     * fundamental bitwise operations that will precisely find, and return the
+     * first pieces along each diagonal. It is analogous to color, and will
+     * return multiple masking bits if multiple can be considered. If zero is
+     * returned, it can be inferred that no pieces could reach the square.
+     * <br>
+     * Note: this won't necessarily return any bishops, as a bitwise AND will be
+     * used on a piece boardController after invoked. It only returns the pieces that are
+     * along the diagonals, that could potentially be bishops
+     *
+     * @param dest
+     *      bit representing the square any bishop was moved to.
+     * @return long
+     *      value corresponding to the bishop(s) that can reach the dest bit.
+     */
     private long bishopMask(long dest) {
         long gameBoard = board.getGameBoard();
         long fileA = 0x0101010101010101L;
         long fileH = 0x8080808080808080L;
         long bishopMask = 0;
+
+
         long bishopLeft = dest >>> 1;
         long upperLeft = bishopLeft << 8;
         long lowerLeft = bishopLeft >>> 8;
+        // find any bishops on the upper left or lower left diagonals
         while((bishopLeft & fileH) == 0 && bishopLeft != 0) {
             if ((upperLeft & gameBoard) == 0) {
                 // stop iteration once the first occurrence is recorded
@@ -528,9 +592,10 @@ public class InputAnalyzer {
         long bishopRight = dest << 1;
         long upperRight = bishopRight << 8;
         long lowerRight = bishopRight >>> 8;
+        // find any bishops on the upper right or lower right diagonals
         while ((bishopRight & fileA) == 0 && bishopRight != 0) {
             if ((upperRight & gameBoard) == 0) {
-                // stop iteration once first occurrence is recorded.
+                // stop iteration once first occurrence is recorded
                 upperRight = upperRight << 9;
             }
             if ((lowerRight & gameBoard) == 0) {
@@ -548,8 +613,24 @@ public class InputAnalyzer {
         return bishopMask;
     }
 
+    /**
+     * Helper method for maskGenerator used exclusively for Rooks. As with the
+     * bishopMask method, this will also use fundamental bit manipulation to
+     * obtain the rook (or rooks) that could be used to reach the dest square.
+     * <br>
+     * Note: this won't necessarily return any rooks, as a bitwise AND will be
+     * used on a piece boardController after invoked. It only returns the pieces that are
+     * along the rank and file of the dest, that could potentially be rooks.
+     * TODO: get rid of reliance on colorBoard as its an unnecessary parameter.
+     *
+     * @param dest
+     *      bit representing the square that a rook is being moved to.
+     * @param colorBoard
+     *      boardController from the color the move is designated to.
+     * @return long
+     *      mask of pieces along the given file and rank that may be a rook.
+     */
     private long rookMask(long dest, long colorBoard) {
-//        long gameBoard = board.getVirtualGameBoard();
         long fileA = 0x0101010101010101L;
         long fileH = 0x8080808080808080L;
 
@@ -601,6 +682,11 @@ public class InputAnalyzer {
         return (0x01L << file) << (8 * rank);
     }
 
+    /**
+     * Used exclusively by en passant analysis for now.
+     * TODO: this is not necessary and other methods can be invoked to achieve
+     *       a similar outcome. e.p. currently relies on older style of analysis
+     */
     @Deprecated
     private long getMask(char rank, int file) throws IllegalArgumentException {
         long mask = 0x01L;
@@ -622,10 +708,11 @@ public class InputAnalyzer {
     }
 
     /**
-     * Utilizes board virtualization to apply the given move to the current board and see if the king is put in check.
+     * Utilizes boardController virtualization to apply the given move to the current
+     * boardController and see if the king is put in check.
      *
      * @param move
-     *      Move to apply to the board
+     *      Move to apply to the boardController
      * @throws IllegalStateException
      *      Thrown if it puts the king in check
      */
@@ -635,109 +722,3 @@ public class InputAnalyzer {
         }
     }
 }
-
-//private Move knightMoveAnalysis(String input, Piece.Color color, boolean pieceCaptured) {
-//    long destKnight = getMask(input.charAt(input.length() - 2), getAsciiInt(input.charAt(input.length() - 1)));
-//    long colorKnights = board.getColorBoards(color)[1];
-//    long gameBoard = board.getGameBoard();
-//    long oppBoard;
-//
-//    if (color == Piece.Color.WHITE) {
-//        oppBoard = board.getBoardColor(Piece.Color.BLACK);
-//    }
-//    else {
-//        oppBoard = board.getBoardColor(Piece.Color.WHITE);
-//    }
-//
-//
-//    if (input.length() == 3) {
-//        // normal masking procedure (source square unknown)
-//        long knightMask = maskGenerator(destKnight, Piece.Type.KNIGHT);
-//        long sourceKnight = colorKnights & knightMask;
-//
-//        if (sourceKnight != 0 && (gameBoard & destKnight) == 0) {
-//            // make sure that a knight is at the source, and no piece was in the destination square
-//            return new Move(sourceKnight, destKnight, Piece.Type.KNIGHT, color);
-//        }
-//    }
-//    else if (input.length() == 4) {
-//        int rankOrFile = getAsciiInt(input.charAt(1));
-//
-//        if (input.charAt(1) == 'x') {
-//            // capture with normal masking
-//            long knightMask = maskGenerator(destKnight, Piece.Type.KNIGHT);
-//            long sourceKnight = colorKnights & knightMask;
-//
-//            if (sourceKnight != 0 && (oppBoard & destKnight) != 0) {
-//                // ensure that a knight is at the source, and the opponents board has a piece that is captured.
-//                return new Move(sourceKnight, destKnight, Piece.Type.KNIGHT, color, board.getPiece(destKnight).type);
-//            }
-//        }
-//        else if (rankOrFile < 57 && rankOrFile  > 48) {
-//            // two knights from the mask with duplicate files, rankOrFile has the rank of the moved knight
-//            int offset = rankOrFile - 48;
-//            long rank01 = 0x00000000000000FFL;
-//            long trueRank = rank01 << (offset * 8);
-//
-//            long knightMask = maskGenerator(destKnight, Piece.Type.KNIGHT);
-//            long sourceKnight = colorKnights & (knightMask & trueRank);
-//
-//            if (sourceKnight != 0 && (gameBoard & destKnight) == 0) {
-//                // ensure a knight exists at the provided rank, and no piece exists on the moved to square.
-//                return new Move(sourceKnight, destKnight, Piece.Type.KNIGHT, color);
-//            }
-//
-//        }
-//        else if (rankOrFile < 105 && rankOrFile  > 97) {
-//            // two knights from the mask can be starting square. Use file of true knight to disambiguate
-//            int offset = rankOrFile - 97;
-//            long fileA = 0x0101010101010101L;
-//            long trueFile = fileA << offset;
-//
-//            long knightMask = maskGenerator(destKnight, Piece.Type.KNIGHT);
-//            long sourceKnight = colorKnights & (knightMask & trueFile);
-//
-//            if (sourceKnight != 0 && (gameBoard & destKnight) == 0) {
-//                // ensure a knight exists at the file specified, and ensure that no piece exists at the destination
-//                // square of interest.
-//                return new Move(sourceKnight, destKnight, Piece.Type.KNIGHT, color);
-//            }
-//        }
-//    }
-//    else if (input.length() == 5 && input.charAt(2) == 'x') {
-//        // Can't disambiguate between two knights for a captured piece turn.
-//        int rankOrFile = getAsciiInt(input.charAt(1));
-//
-//        if (rankOrFile < 57 && rankOrFile  > 48) {
-//            // two knights from the mask with duplicate files, rankOrFile has the rank of the moved knight
-//            int offset = rankOrFile - 48;
-//            long rank01 = 0x00000000000000FFL;
-//            long trueRank = rank01 << (offset * 8);
-//
-//            long knightMask = maskGenerator(destKnight, Piece.Type.KNIGHT);
-//            long sourceKnight = colorKnights & (knightMask & trueRank);
-//
-//            if (sourceKnight != 0 && (oppBoard & destKnight) != 0) {
-//                // ensure a knight exists at the provided rank, and an enemy piece exists on the moved to square.
-//                return new Move(sourceKnight, destKnight, Piece.Type.KNIGHT, color, board.getPiece(destKnight).type);
-//            }
-//        }
-//        else if (rankOrFile < 105 && rankOrFile  > 97) {
-//            // two knights from the mask can be starting square. Use file of true knight to disambiguate
-//            int offset = rankOrFile - 97;
-//            long fileA = 0x0101010101010101L;
-//            long trueFile = fileA << offset;
-//
-//            long knightMask = maskGenerator(destKnight, Piece.Type.KNIGHT);
-//            long sourceKnight = colorKnights & (knightMask & trueFile);
-//
-//            if (sourceKnight != 0 && (oppBoard & destKnight) != 0) {
-//                // ensure a knight exists at the file specified, and ensure that an enemy piece exists at the
-//                // destination square of interest.
-//                return new Move(sourceKnight, destKnight, Piece.Type.KNIGHT, color, board.getPiece(destKnight).type);
-//            }
-//        }
-//    }
-//
-//    throw new IllegalStateException("Illegal Knight Move Notation");
-//}

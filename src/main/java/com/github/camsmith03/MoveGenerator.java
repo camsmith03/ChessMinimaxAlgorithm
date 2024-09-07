@@ -1,68 +1,75 @@
 package com.github.camsmith03;
 
+/**
+ * The MoveGenerator provides the ability to find all the legal moves at the
+ * current board state. By current state, if the board is being virtualized, it
+ * is assumed that the virtual state will be utilized for the generation of all
+ * moves.
+ *
+ * @author Cameron Smith
+ * @version 08.26.2024
+ */
 public class MoveGenerator {
-    private final long alternatingByteMask = 0xFF00FF00FF00FF00L;
     private MoveList possibleMoves;
     private Bitboard bitboard;
     private long[][] boards;
-    private long[] colorBoards;
     private long gameBoard;
-//    private long[] colorBoards;
-    private final long[] queenSideCastleCheck = new long[]{0x0E, 0xE000000000000000L};
-    private final long[] kingSideCastleCheck = new long[]{0x60, 0x06000000000000L};
+    private final long alternatingByteMask = 0xFF00FF00FF00FF00L;
 
     /**
-     * Generates all moves, even those that may be illegal (putting king in check, etc.)
+     * Generates all moves that cam be made for the current board configuration.
+     * The only illegal moves that will get added are those that would put the
+     * king into the checked position. It is the job of the caller to test each
+     * move and ensure it doesn't lead to such conditions. This made the most
+     * sense, since every move needs to be applied to observe if the king is in
+     * check. Thus, it made sense to reserve such conditions for when moves will
+     * be made.
      *
+     * @param bitboard
+     *      corresponding to the current state the game is in.
+     * @param turnToMove
+     *      color to generate the moves for.
+     * @return MoveList
      */
     public MoveList generateMoves(Bitboard bitboard, Piece.Color turnToMove) {
         possibleMoves = new MoveList();
         this.bitboard = bitboard;
         boards = bitboard.getVirtualBoards();
-        colorBoards = bitboard.getVirtualColorBoards();
         gameBoard = bitboard.getGameBoard();
-
-//        colorBoards = new long[]{
-//                bitboard.getBoardColor(Piece.Color.WHITE),
-//                bitboard.getBoardColor(Piece.Color.BLACK)
-//        };
 
         if (turnToMove == Piece.Color.WHITE) {
             long[] white = boards[0];
-            // ============== Knights ==============
             knightAppend(white[1], Piece.Color.WHITE);
-            // ============== Bishops ==============
             bishopAppend(white[2], Piece.Type.BISHOP, Piece.Color.WHITE);
-            // ==============  Queen  ==============
             bishopAppend(white[4], Piece.Type.QUEEN, Piece.Color.WHITE);
             rookAppend(white[4], Piece.Type.QUEEN, Piece.Color.WHITE);
-            // ==============  Pawns  ==============
             whitePawnAppend(white[0]);
-            // ==============  Rooks  ==============
             rookAppend(white[3], Piece.Type.ROOK, Piece.Color.WHITE);
-            // ==============   King  ==============
             kingAppend(white[5], Piece.Color.WHITE);
         }
         else {
             long[] black = boards[1];
-            // ============== Knights ==============
             knightAppend(black[1], Piece.Color.BLACK);
-            // ============== Bishops ==============
             bishopAppend(black[2], Piece.Type.BISHOP, Piece.Color.BLACK);
-            // ==============  Queen  ==============
             bishopAppend(black[4], Piece.Type.QUEEN, Piece.Color.BLACK);
             rookAppend(black[4], Piece.Type.QUEEN, Piece.Color.BLACK);
-            // ==============  Pawns  ==============
             blackPawnAppend(black[0]);
-            // ==============  Rooks  ==============
             rookAppend(black[3], Piece.Type.ROOK, Piece.Color.BLACK);
-            // ==============   King  ==============
             kingAppend(black[5], Piece.Color.BLACK);
         }
 
         return possibleMoves;
     }
 
+    /**
+     * Finds all legal moves for the white pawns on the board. While admittedly
+     * it doesn't make sense to separate the white from black pawn moves. For
+     * the sake of simplicity in the underlying bitwise operations, it was more
+     * practical (and safer) to choose this implementation over others.
+     *
+     * @param pawns
+     *      masking bits for all the white pawns on the current board.
+     */
     private void whitePawnAppend(long pawns) {
         long gameBoard = bitboard.getGameBoard();
 
@@ -76,9 +83,9 @@ public class MoveGenerator {
                 possibleMoves.add(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.NONE, Piece.Type.BISHOP);
                 possibleMoves.add(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE, Piece.Type.NONE, Piece.Type.QUEEN);
             }
-            else {
+            else
                 pieceAppend(pawn >>> 8, pawn, Piece.Type.PAWN, Piece.Color.WHITE);
-            }
+
             pawnMoves1 ^= pawn;
         }
 
@@ -98,22 +105,18 @@ public class MoveGenerator {
         while (pawnCaptured != 0) {
             long pawn = pawnCaptured & -pawnCaptured;
             long pShift = (pawn << 8);
-            if ( (pShift & alternatingByteMask) != 0) {
+            if ( (pShift & alternatingByteMask) != 0)
                 pMask = alternatingByteMask;
-            }
-            else {
+            else
                 pMask = ~alternatingByteMask;
-            }
 
-            if (((pShift << 1) & pMask) != 0) {
-                // If pawn is not on right edge of the board
+
+            if (((pShift << 1) & pMask) != 0) // If pawn is not on right edge of the board
                 pawnCapture(pawn, pShift << 1, Piece.Color.WHITE);
-            }
 
-            if (((pShift >>> 1) & pMask) != 0) {
-                // If pawn is not on left edge of the board
+            if (((pShift >>> 1) & pMask) != 0) // If pawn is not on left edge of the board
                 pawnCapture(pawn, pShift >>> 1, Piece.Color.WHITE);
-            }
+
             pawnCaptured ^= pawn;
         }
 
@@ -141,20 +144,16 @@ public class MoveGenerator {
                 }
             }
         }
-        /*
-        We can apply check for illegal pawn moves by using two alternating byte masks.
-            alternatingByteMask  => 0xFF00FF00FF00FF00
-            ~alternatingByteMask => 0x00FF00FF00FF00FF
 
-        For pawn movements, any space that is capture-able must have a bit falling within the same mask as the original
-        space (after moving up). The masks are inverses of alternating bytes. This behavior isn't obvious at first, but
-        one can notice that the 8 squares per file, corresponds to 8 bits. Thus, each file follows the alternating set
-        of bytes. So whenever the pawn is on the far left or right rank, we can automatically determine whether a legal
-        move is valid based on is file's mask (as looping over would increase or decrease a file thus changing the
-        mask).
-         */
     }
 
+    /**
+     * This will find all the black pawn moves that can be made for the current
+     * board state. See above for details on why the separation was made.
+     *
+     * @param pawns
+     *      masking bits for all the plack pawns on the current board.
+     */
     private void blackPawnAppend(long pawns) {
         long gameBoard = bitboard.getGameBoard();
 
@@ -169,9 +168,9 @@ public class MoveGenerator {
                 possibleMoves.add(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK, Piece.Type.NONE, Piece.Type.BISHOP);
                 possibleMoves.add(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK, Piece.Type.NONE, Piece.Type.QUEEN);
             }
-            else {
+            else
                 pieceAppend(pawn << 8, pawn, Piece.Type.PAWN, Piece.Color.BLACK);
-            }
+
             pawnMoves1 ^= pawn;
         }
 
@@ -191,22 +190,17 @@ public class MoveGenerator {
         while (pawnCaptured != 0) {
             long pawn = pawnCaptured & -pawnCaptured;
             long pShift = (pawn >>> 8);
-            if ( (pShift & alternatingByteMask) != 0) {
+            if ( (pShift & alternatingByteMask) != 0)
                 pMask = alternatingByteMask;
-            }
-            else {
+            else
                 pMask = ~alternatingByteMask;
-            }
 
-            if (((pShift << 1) & pMask) != 0) {
-                // If pawn is not on right edge of the board
+            if (((pShift << 1) & pMask) != 0) // If pawn is not on right edge of the board
                 pawnCapture(pawn, pShift << 1, Piece.Color.BLACK);
-            }
 
-            if (((pShift >>> 1) & pMask) != 0) {
-                // If pawn is not on left edge of the board
+            if (((pShift >>> 1) & pMask) != 0) // If pawn is not on left edge of the board
                 pawnCapture(pawn, pShift >>> 1, Piece.Color.BLACK);
-            }
+
             pawnCaptured ^= pawn;
         }
 
@@ -218,8 +212,7 @@ public class MoveGenerator {
                 long whitePawn = bitboard.enPassantBoard ^ blackPawns;
                 long blackPawn = blackPawns & -blackPawns;
 
-                Move enPassant = new Move(blackPawn, whitePawn >>> 8, Piece.Type.PAWN, Piece.Color.BLACK,
-                        Piece.Type.PAWN);
+                Move enPassant = new Move(blackPawn, whitePawn >>> 8, Piece.Type.PAWN, Piece.Color.BLACK, Piece.Type.PAWN);
 
                 enPassant.setEnPassant(whitePawn);
                 possibleMoves.addMove(enPassant);
@@ -239,15 +232,51 @@ public class MoveGenerator {
         }
     }
 
+    /**
+     * Specialized helper method for both white and black pawn append that will
+     * add the pawn capturing moves to the MoveList. This needs to check if the
+     * move itself landed on any opposing pieces.
+     *
+     * @param oldLoc
+     *      starting location for the pawn.
+     * @param newLoc
+     *      ending location for the pawn (along a diagonal).
+     * @param color
+     *      color of the pawn making the capture.
+     */
+    private void pawnCapture(long oldLoc, long newLoc, Piece.Color color) {
+        if (newLoc != 0) {
+            Piece captured = bitboard.getPiece(newLoc);
+            if (captured != null) {
+                if (color != captured.color) {
+                    if ((newLoc & 0xFF000000000000FFL) != 0) {
+                        // Captured piece AND pawn promotion
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.KNIGHT));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.BISHOP));
+                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.QUEEN));
+                    }
+                    else // Captured piece
+                        possibleMoves.add(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.NONE);
+                }
+            }
+        }
+    }
 
+    /**
+     * This will find all the moves that the king can currently make. This
+     * includes the moves involving the king being castled.
+     *
+     * @param king
+     *      masking bit for the location the king is currently at.
+     * @param color
+     *      color corresponding to the king in question.
+     */
     private void kingAppend(long king, Piece.Color color) {
         long kingMask;
-        if ((king & alternatingByteMask) != 0) {
+        if ((king & alternatingByteMask) != 0)
             kingMask = alternatingByteMask;
-        }
-        else {
+        else
             kingMask = ~alternatingByteMask;
-        }
 
         if (((king << 1) & kingMask) != 0) {
             pieceAppend(king, king << 1, Piece.Type.KING, color);
@@ -265,85 +294,108 @@ public class MoveGenerator {
 
         int colorIndex = color.ordinal();
         if (boards[colorIndex][6] != 0) {
-            // Check Queen side castle
-            long boardColor = colorBoards[colorIndex];
-            if ((boardColor & queenSideCastleCheck[colorIndex]) == 0) {
-                long freeSquares = king >>> 1 | king >>> 2 | king >>> 3;
-                if ((gameBoard & freeSquares) == 0) {
-                    Move queenSideCastle = new Move(king, king >>> 2, Piece.Type.KING, color);
-                    queenSideCastle.setCastledRook(Move.CastleSide.QUEEN_SIDE);
-                    possibleMoves.addMove(queenSideCastle);
-                }
-            }
+            long kingPos = 0x0010L << (56 * colorIndex); // shifts up to compensate if black moves are being calculated,
+                                                         // no shifts made for white.
 
-            // Check King side castle
-            if ((boardColor & kingSideCastleCheck[colorIndex]) == 0) {
-                long freeSquares = king << 1 | king << 2;
-                if ((gameBoard & freeSquares) == 0) {
-                    Move kingSideCastle = new Move(king, king << 2, Piece.Type.KING, color);
-                    kingSideCastle.setCastledRook(Move.CastleSide.KING_SIDE);
-                    possibleMoves.addMove(kingSideCastle);
+            // ensure the king exists at the starting location
+            if (king == kingPos) {
+                long rookPos = 0x0001L << (56 * colorIndex);
+                // Check Queen side castle
+                if ((rookPos & boards[colorIndex][6]) == rookPos) {
+                    long freeSquares = king >>> 1 | king >>> 2 | king >>> 3;
+                    if ((gameBoard & freeSquares) == 0) { // check the middle squares to ensure they aren't occupied.
+                        Move queenSideCastle = new Move(king, king >>> 2, Piece.Type.KING, color);
+                        queenSideCastle.setCastledRook(Move.CastleSide.QUEEN_SIDE);
+                        possibleMoves.addMove(queenSideCastle);
+                    }
+                }
+                // Check King side castle
+                rookPos = rookPos << 7; // swap the rookPos to the other side;
+                if ((rookPos & boards[colorIndex][6]) == rookPos) {
+                    long freeSquares = king << 1 | king << 2;
+                    if ((gameBoard & freeSquares) == 0) {
+                        Move kingSideCastle = new Move(king, king << 2, Piece.Type.KING, color);
+                        kingSideCastle.setCastledRook(Move.CastleSide.KING_SIDE);
+                        possibleMoves.addMove(kingSideCastle);
+                    }
                 }
             }
         }
     }
 
+    /**
+     * This will find all the moves that the 'rooks' of a specific color can
+     * make on the board. The reason why a type parameter is passed is due to
+     * the Queen having nearly identical behavior. Interfacing with pieceAppend
+     * requires the usage of type, so it was included to simplify the move
+     * adding behavior.
+     *
+     * @param rooks
+     *      masking bits for the location of the rooks (or queen(s)).
+     * @param type
+     *      type parameter for the pieces rooks refers to.
+     * @param color
+     *      color parameter for the colors the rooks refers to.
+     */
     private void rookAppend(long rooks, Piece.Type type, Piece.Color color) {
         long rookMask;
         long rookLeft, rookRight, rookUp, rookDown;
         while (rooks != 0) {
             long rook = rooks & -rooks;
 
-            if ((rook & alternatingByteMask) != 0) {
+            if ((rook & alternatingByteMask) != 0)
                 rookMask = alternatingByteMask;
-            }
-            else {
+            else
                 rookMask = ~alternatingByteMask;
-            }
+
 
             rookLeft = rook >>> 1;
             while ((rookLeft & rookMask) != 0 && rookLeft != 0) {
-                if (pieceAppend(rook, rookLeft, type, color) == 0) {
+                if (pieceAppend(rook, rookLeft, type, color) == 0)
                     rookLeft = rookLeft >>> 1;
-                }
-                else {
+                else
                     rookLeft = 0;
-                }
             }
 
             rookRight = rook << 1;
             while ((rookRight & rookMask) != 0 && rookRight != 0) {
-                if (pieceAppend(rook, rookRight, type, color) == 0) {
+                if (pieceAppend(rook, rookRight, type, color) == 0)
                     rookRight = rookRight << 1;
-                }
-                else {
+                else
                     rookRight = 0;
-                }
             }
 
             rookUp = rook << 8;
             while (rookUp != 0) {
-                if (pieceAppend(rook, rookUp, type, color) == 0) {
+                if (pieceAppend(rook, rookUp, type, color) == 0)
                     rookUp = rookUp << 8;
-                }
-                else {
+                else
                     rookUp = 0;
-                }
             }
 
             rookDown = rook >>> 8;
             while (rookDown != 0) {
-                if (pieceAppend(rook, rookDown, type, color) == 0) {
+                if (pieceAppend(rook, rookDown, type, color) == 0)
                     rookDown = rookDown << 8;
-                }
-                else {
+                else
                     rookDown = 0;
-                }
             }
             rooks ^= rook;
         }
     }
 
+    /**
+     * Finds all the moves that the bishops can make. As with rookAppend, this
+     * takes the type parameter for allowing the queen to be used for the
+     * calculations.
+     *
+     * @param bishops
+     *       masking bits for the location of the bishops (or queen(s)).
+     * @param type
+     *      type parameter for the pieces bishops refers to.
+     * @param color
+     *      color parameter for the colors the bishops refers to.
+     */
     private void bishopAppend(long bishops, Piece.Type type, Piece.Color color) {
         long bishopMask;
         long upperdiag;
@@ -352,32 +404,27 @@ public class MoveGenerator {
         while (bishops != 0) {
             long bishop = bishops & -bishops;
 
-            if ((bishop & alternatingByteMask) != 0) {
+            if ((bishop & alternatingByteMask) != 0)
                 bishopMask = alternatingByteMask;
-            }
-            else {
+            else
                 bishopMask = ~alternatingByteMask;
-            }
+
 
             upperdiag = bishop << 7;
             lowerdiag = bishop >>> 9;
             long leftSide = bishop >>> 1;
             while ((leftSide & bishopMask) != 0 && (upperdiag != 0 || lowerdiag != 0)) {
                 if (upperdiag != 0) {
-                    if (pieceAppend(bishop, upperdiag, type, color) == 0) {
+                    if (pieceAppend(bishop, upperdiag, type, color) == 0)
                         upperdiag = upperdiag << 7;
-                    }
-                    else {
+                    else
                         upperdiag = 0;
-                    }
                 }
                 if (lowerdiag != 0) {
-                    if (pieceAppend(bishop, lowerdiag, type, color) == 0) {
+                    if (pieceAppend(bishop, lowerdiag, type, color) == 0)
                         lowerdiag = lowerdiag >>> 9;
-                    }
-                    else {
+                    else
                         lowerdiag = 0;
-                    }
                 }
                 leftSide = leftSide >>> 1;
             }
@@ -387,20 +434,17 @@ public class MoveGenerator {
             long rightSide = bishop << 1;
             while ((rightSide & bishopMask) != 0 && (upperdiag != 0 || lowerdiag != 0)) {
                 if (upperdiag != 0) {
-                    if (pieceAppend(bishop, upperdiag, type, color) == 0) {
+                    if (pieceAppend(bishop, upperdiag, type, color) == 0)
                         upperdiag = upperdiag << 9; // Bishop hit an empty square, can continue on the diagonal.
-                    }
-                    else {
+                    else
                         upperdiag = 0; // Bishop hit nonempty square, can no longer continue on the diagonal.
-                    }
+
                 }
                 if (lowerdiag != 0) {
-                    if (pieceAppend(bishop, lowerdiag, type, color) == 0) {
+                    if (pieceAppend(bishop, lowerdiag, type, color) == 0)
                         lowerdiag = lowerdiag >>> 7; // Bishop hit an empty square, can continue on the diagonal.
-                    }
-                    else {
+                    else
                         lowerdiag = 0; // Bishop hit nonempty square, can no longer continue on the diagonal.
-                    }
                 }
                 rightSide = rightSide << 1;
             }
@@ -409,16 +453,23 @@ public class MoveGenerator {
         }
     }
 
+    /**
+     * Finds all the moves that the knights can make.
+     *
+     * @param knights
+     *      masking bits for the location of the knights.
+     * @param color
+     *      color parameter for the color the knights refers to.
+     */
     private void knightAppend(long knights, Piece.Color color) {
         long knightMask;
         while (knights != 0) {
             long knight = knights & -knights;
-            if ((knight & alternatingByteMask) != 0) {
+            if ((knight & alternatingByteMask) != 0)
                 knightMask = alternatingByteMask;
-            }
-            else {
+            else
                 knightMask = ~alternatingByteMask;
-            }
+
             if (((knight >>> 1) & knightMask) != 0) {
                 if (((knight >>> 2) & knightMask) != 0) {
                     pieceAppend(knight, (knight << 8) >>> 2, Piece.Type.KNIGHT, color);
@@ -440,29 +491,9 @@ public class MoveGenerator {
         }
     }
 
-    private void pawnCapture(long oldLoc, long newLoc, Piece.Color color) {
-        if (newLoc != 0) {
-            Piece captured = bitboard.getPiece(newLoc);
-            if (captured != null) {
-                if (color != captured.color) {
-                    if ((newLoc & 0xFF000000000000FFL) != 0) {
-                        // Captured piece AND pawn promotion
-                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.KNIGHT));
-                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.BISHOP));
-                        possibleMoves.addMove(new Move(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.QUEEN));
-                    }
-                    else {
-                        // Captured piece
-                        possibleMoves.add(oldLoc, newLoc, Piece.Type.PAWN, color, captured.type, Piece.Type.NONE); // opponent piece captured
-                    }
-                }
-            }
-        }
-    }
-
-
     /**
-     *
+     * Appends the piece to the MoveList assuming that it satisfies some
+     * conditions.
      *
      * @param oldLoc
      *      single bit representing original location where piece started.
@@ -470,14 +501,14 @@ public class MoveGenerator {
      *      single bit representing location that piece was moved to.
      * @param color
      *      color of the piece that is moved
-     * @return 0 if new location was an empty space
-     *         1 if opponent piece captured at new location
-     *        -1 if new location stored invoking player colored piece
-     *        -2 if new location is off the board
+     * @return 0 if new location was an empty space,<br>
+     *         1 if opponent piece captured at new location,<br>
+     *        -1 if new location stored invoking player colored piece,<br>
+     *        -2 if new location is off the board.
      */
     private int pieceAppend(long oldLoc, long newLoc, Piece.Type type, Piece.Color color) {
         // check to see if piece move is legal (no piece of same color) and append it whether it has captured
-        // a black piece or not. Assumes the locations are valid and checked before function call.
+        // an opponent piece or not. Assumes the locations are valid and checked before function call.
         if (newLoc != 0) {
             // avoid the method call if the newLoc extends below or above the board.
             Piece captured = bitboard.getPiece(newLoc);

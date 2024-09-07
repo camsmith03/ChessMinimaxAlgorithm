@@ -1,7 +1,7 @@
 package com.github.camsmith03;
 
 /**
- * After a move has been decided as the best for the current board, that move will be sent here, to the output
+ * After a move has been decided as the best for the current boardController, that move will be sent here, to the output
  * translation algorithm. This effectively does the reverse of the InputLexer/InputAnalyzer classes, and will convert
  * the move to a human-readable output so the player can determine the best move for the situation.
  */

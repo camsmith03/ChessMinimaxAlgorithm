@@ -2,19 +2,19 @@ package com.github.camsmith03;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class InputTests {
-    Board board;
+    BoardController boardController;
     InputLexer lex;
     char[] ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
     char[] files = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
 
     @BeforeEach
     void setUp() {
-        board = new Board();
-        lex = new InputLexer(board);
+        boardController = new BoardController();
+        lex = new InputLexer(boardController);
     }
 
     @Test
@@ -45,7 +45,7 @@ public class InputTests {
         }
 
         for (int i = 0; i < inclusionByColor[1].length; i++) {
-            board.changeTurn();
+            boardController.changeTurn();
             IllegalStateException ise = null;
             try {
                 lex.interpret(inclusionByColor[1][i]);
@@ -84,7 +84,7 @@ public class InputTests {
             // double ambiguity
             helperDup2("B", false, exclusionByColor[i]); // no capture
             helperDup2("B", true, exclusionByColor[i]); // capture
-            board.changeTurn();
+            boardController.changeTurn();
         }
     }
 
@@ -108,7 +108,7 @@ public class InputTests {
             // double ambiguity
             helperDup2("B", false, null); // no capture
             helperDup2("B", true, null); // capture
-            board.changeTurn();
+            boardController.changeTurn();
         }
     }
 
@@ -132,7 +132,7 @@ public class InputTests {
             // double ambiguity
             helperDup2("Q", false, null); // no capture
             helperDup2("Q", true, null); // capture
-            board.changeTurn();
+            boardController.changeTurn();
         }
     }
 
@@ -156,7 +156,7 @@ public class InputTests {
             // double ambiguity
             helperDup2("R", false, null); // no capture
             helperDup2("R",  true, null); // capture
-            board.changeTurn();
+            boardController.changeTurn();
         }
     }
 
