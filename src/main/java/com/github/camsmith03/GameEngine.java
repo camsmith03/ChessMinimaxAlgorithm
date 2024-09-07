@@ -50,22 +50,22 @@ public class GameEngine {
                 boardController.getBitboard().printKingMasks(Piece.Color.BLACK);
                 probeNextMove(scan);
             }
-            case "print boardController" -> {
+            case "print board" -> {
                 System.out.println("=================== GAME  BOARD ====================");
                 boardController.getBitboard().printGameBoard();
                 probeNextMove(scan);
             }
-            case "print boardController bits" -> {
+            case "print board bits" -> {
                 System.out.println("=================== BIT   BOARD ====================");
                 boardController.getBitboard().printGameBoardBits();
                 probeNextMove(scan);
             }
-            case "print white boardController" -> {
+            case "print white board" -> {
                 System.out.println("=================== WHITE BOARD ====================");
                 boardController.getBitboard().printColorBoard(Piece.Color.WHITE);
                 probeNextMove(scan);
             }
-            case "print black boardController" -> {
+            case "print black board" -> {
                 System.out.println("=================== BLACK BOARD ====================");
                 boardController.getBitboard().printColorBoard(Piece.Color.BLACK);
                 probeNextMove(scan);
