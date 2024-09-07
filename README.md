@@ -3,7 +3,7 @@ This is a version of the Minimax algorithm written in Java.
 
 It utilizes bitboards as backing storage, and efficiency is maintained up to a ply of 7. Further improvements are expected to increase it's accuracy and efficiency.
 
-### Distinguishing features
+## Distinguishing features
 - Bitboard backing storage
   - Uses 64 bit long arrays to represent the entire board. 
     - Six longs per side, for each of the six types of chess pieces.
